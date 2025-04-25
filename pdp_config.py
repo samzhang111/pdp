@@ -1,6 +1,7 @@
-from ruamel.yaml import YAML
 from pathlib import Path
 from abc import ABC, abstractmethod
+
+from ruamel.yaml import YAML
 
 from pdp_errors import UninitializedProjectError
 
@@ -118,6 +119,7 @@ class TaskConfig(GenericConfig):
 
     def initialize(self):
         if self.initialized:
+            self.config = self.read_config_file()
             return
 
         self.yaml.dump({"entrypoint": "make", "subtasks": []}, self.config_path)
@@ -132,3 +134,9 @@ class TaskConfig(GenericConfig):
             return False
 
         return True
+
+    @property
+    @requires_initialization
+    def entrypoint(self):
+        self.config = self.read_config_file()
+        return self.config["entrypoint"]

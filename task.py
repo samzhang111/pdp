@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 from pdp_config import TaskConfig
 
@@ -19,3 +20,7 @@ class Task:
         self.src_folder.mkdir(parents=True, exist_ok=True)
 
         self.task_config.initialize()
+
+    def run(self):
+        result = subprocess.run(self.task_config.entrypoint)
+        return result.returncode

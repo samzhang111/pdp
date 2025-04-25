@@ -1,5 +1,4 @@
 import typer
-from pyprojroot import here
 from rich.console import Console
 
 from pdp import PDP, PDPConfig
