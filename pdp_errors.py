@@ -2,5 +2,5 @@ class InvalidConfigError(Exception):
     pass
 
 
-class ProjectUninitializedError(Exception):
+class UninitializedProjectError(Exception):
     pass
