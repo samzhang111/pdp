@@ -6,21 +6,6 @@ from ruamel.yaml import YAML
 from pdp_errors import UninitializedProjectError
 
 
-def find_config_path_from_parents(config_name) -> Path:
-    current_path = Path.cwd()
-    while current_path != current_path.parent:
-        config_path = current_path / config_name
-        if config_path.exists():
-            return config_path
-        current_path = current_path.parent
-
-    config_path = current_path / config_name
-    if config_path.exists():
-        return config_path
-
-    return Path.cwd() / config_name
-
-
 def requires_initialization(method):
     def wrapper(self, *args, **kwargs):
         if not self.initialized:
@@ -31,22 +16,22 @@ def requires_initialization(method):
 
 
 class GenericConfig(ABC):
-    def __init__(self, task_key, config_path) -> None:
+    def __init__(self, task_key, path_to_config) -> None:
         self.yaml = YAML()
 
         self.task_key = task_key
-        self.config_path = Path(config_path)
+        self.path_to_config = Path(path_to_config).resolve()
         self.config = self.read_config_file()
 
     def read_config_file(self):
         try:
-            return dict(self.yaml.load(self.config_path))
+            return dict(self.yaml.load(self.path_to_config))
         except (TypeError, FileNotFoundError):
             return {}
 
     @requires_initialization
     def update_config(self, config):
-        self.yaml.dump(config, self.config_path)
+        self.yaml.dump(config, self.path_to_config)
         self.config = config
 
     @requires_initialization
@@ -57,7 +42,7 @@ class GenericConfig(ABC):
 
     @property
     def initialized(self):
-        if not self.config_path.exists():
+        if not self.path_to_config.exists():
             return False
 
         if len(self.config) == 0:
@@ -78,6 +63,12 @@ class GenericConfig(ABC):
     def tasks(self):
         return self.config.get(self.task_key, [])
 
+    def __repr__(self):
+        try:
+            return f"{self.__class__.__name__}({self.task_name}, {self.path_to_config})"
+        except AttributeError:
+            return f"{self.__class__.__name__}({self.path_to_config})"
+
     @abstractmethod
     def initialize(self):
         pass
@@ -88,17 +79,14 @@ class GenericConfig(ABC):
 
 
 class PDPConfig(GenericConfig):
-    def __init__(self, config_path=None) -> None:
-        if config_path is None:
-            config_path = find_config_path_from_parents("pdp.yml")
-
-        super().__init__("tasks", config_path)
+    def __init__(self, path_to_config) -> None:
+        super().__init__("tasks", path_to_config)
 
     def initialize(self):
         if self.initialized:
             return
 
-        self.yaml.dump({"tasks": []}, self.config_path)
+        self.yaml.dump({"tasks": []}, self.path_to_config)
 
         self.config = self.read_config_file()
 
@@ -113,16 +101,16 @@ class PDPConfig(GenericConfig):
 
 
 class TaskConfig(GenericConfig):
-    def __init__(self, task_name, config_path="task.yml") -> None:
+    def __init__(self, task_name, path_to_config) -> None:
         self.task_name = task_name
-        super().__init__("subtasks", config_path)
+        super().__init__("subtasks", path_to_config)
 
     def initialize(self):
         if self.initialized:
             self.config = self.read_config_file()
             return
 
-        self.yaml.dump({"entrypoint": "make", "subtasks": []}, self.config_path)
+        self.yaml.dump({"entrypoint": "", "subtasks": []}, self.path_to_config)
 
         self.config = self.read_config_file()
 

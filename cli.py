@@ -1,4 +1,5 @@
 import typer
+from typing_extensions import Annotated
 from rich.console import Console
 
 from pdp import PDP, PDPConfig
@@ -9,8 +10,7 @@ console = Console()
 
 
 def load_pdp():
-    config = PDPConfig()
-    pdp = PDP(config)
+    pdp = PDP()
 
     if not pdp.initialized:
         err_console.print("No project detected. Try `pdp init`.")
@@ -31,8 +31,7 @@ def init():
     Initialize the project.
     """
 
-    config = PDPConfig()
-    pdp = PDP(config)
+    pdp = PDP()
     pdp.initialize()
 
 
@@ -55,7 +54,7 @@ def create(task_names: list[str]) -> None:
     pdp = load_pdp()
 
     for task_name in task_names:
-        pdp.create_task(task_name)
+        pdp.create_task_from_current_location(task_name)
 
 
 @app.command()
@@ -72,6 +71,28 @@ def validate():
         raise typer.Exit(1)
 
     console.print("Valid.")
+
+
+@app.command()
+def run(task_name: Annotated[str, typer.Argument()] = None) -> None:
+    """
+    Run a task.
+    """
+
+    pdp = load_pdp()
+
+    if task_name:
+        return_code = pdp.run_task(task_name)
+    else:
+        current_task = pdp.current_task
+
+        if current_task == ".":
+            return_code = pdp.run_all()
+
+        else:
+            return_code = pdp.run_task(current_task.task_name)
+
+    raise typer.Exit(return_code)
 
 
 if __name__ == "__main__":

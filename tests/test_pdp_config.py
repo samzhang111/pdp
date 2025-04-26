@@ -8,26 +8,29 @@ import pytest
 from pdp_config import PDPConfig, TaskConfig
 
 
-def test_config_initialization(fs):
-    config = PDPConfig()
+@pytest.fixture
+def config(fs):
+    config = PDPConfig(Path("pdp.yml"))
+    yield config
+
+
+def test_config_initialization(config, fs):
     expect(config.read_config_file()).to(equal({}))
 
-    config.config_path.touch()
+    config.path_to_config.touch()
     expect(config.read_config_file()).to(equal({}))
 
     expect(config.initialized).to(be_false)
 
 
-def test_config_initialize_creates_file(fs):
-    config = PDPConfig()
+def test_config_initialize_creates_file(config, fs):
     config.initialize()
 
     with open("pdp.yml") as f:
         expect(f.read().strip()).to(equal("tasks: []"))
 
 
-def test_config_add_task(fs):
-    config = PDPConfig()
+def test_config_add_task(config, fs):
     config.initialize()
 
     config.add_task("hello")
@@ -43,8 +46,7 @@ def test_config_add_task(fs):
         expect(f.read().strip()).to(equal("tasks:\n- hello\n- world"))
 
 
-def test_config_validate(fs):
-    config = PDPConfig()
+def test_config_validate(config, fs):
     config.initialize()
 
     expect(config.validate()).to(be_true)
@@ -59,39 +61,12 @@ def test_config_validate(fs):
     expect(config.validate()).to(be_false)
 
 
-def test_config_finds_pdp_yml_from_parents(fs):
-    with open("./pdp.yml", "w") as f:
-        f.write("tasks:\n  - hello\n  - world\n")
-
-    nested_dir = Path("nested")
-    nested_dir.mkdir(parents=True, exist_ok=True)
-
-    os.chdir(nested_dir)
-
-    config = PDPConfig()
-    config.initialize()
-
-    expect(config.config_path).to(equal(Path("/pdp.yml")))
-
-
-def test_config_uses_current_directory_if_no_pdp_yml_found(fs):
-    nested_dir = Path("nested")
-    nested_dir.mkdir(parents=True, exist_ok=True)
-
-    os.chdir(nested_dir)
-
-    config = PDPConfig()
-    config.initialize()
-
-    expect(config.config_path).to(equal(Path("/nested/pdp.yml")))
-
-
 def test_task_config_initializes_with_entrypoint_and_subtasks(fs):
     config = TaskConfig("task1", "task.yml")
     config.initialize()
 
     with open("task.yml") as f:
-        expect(f.read().strip()).to(equal("entrypoint: make\nsubtasks: []"))
+        expect(f.read().strip()).to(equal("entrypoint: ''\nsubtasks: []"))
 
 
 def test_task_config_validation_requires_subtasks_and_entrypoint(fs):
@@ -107,3 +82,24 @@ def test_task_config_validation_requires_subtasks_and_entrypoint(fs):
     # only entrypoint, without subtasks
     config.update_config({"entrypoint": "make"})
     expect(config.validate()).to(be_false)
+
+
+def test_task_adds_its_own_tasks(fs):
+    config = TaskConfig("task1", "task.yml")
+    config.initialize()
+
+    config.add_task("task2")
+    expect(config.tasks).to(equal(["task2"]))
+
+    yaml = YAML()
+    task_yaml = dict(yaml.load(Path("task.yml")))
+    expect(task_yaml).to(equal({"entrypoint": "", "subtasks": ["task2"]}))
+
+
+def test_task_config_repr_prints_name_and_path(fs):
+    config = TaskConfig("task1", "task.yml")
+    expect(str(config)).to(equal("TaskConfig(task1, /task.yml)"))
+
+
+def test_pdp_config_repr_prints_config_path(config, fs):
+    expect(str(config)).to(equal("PDPConfig(/pdp.yml)"))
