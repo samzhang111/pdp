@@ -11,17 +11,25 @@ from ruamel.yaml import YAML
 from cli import app
 
 
-def test_init_creates_pdp_yaml(fs):
-    runner = CliRunner()
-    result = runner.invoke(app, ["init"])
+@pytest.fixture
+def runner(fs):
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(app, ["init", "--name", "test"])
 
-    with open("pdp.yml") as f:
-        expect(f.read().strip()).to(equal("tasks: []"))
+    return runner
 
 
-def test_create_tasks(fs):
-    runner = CliRunner()
-    result = runner.invoke(app, ["init"])
+def read_config_file(filename):
+    return dict(YAML().load(Path(filename)))
+
+
+def test_init_creates_pdp_yaml(runner, fs):
+    config_dict = read_config_file("/pdp.yml")
+    expect(config_dict["name"]).to(equal("test"))
+    expect(config_dict["tasks"]).to(equal([]))
+
+
+def test_create_tasks(runner, fs):
     result = runner.invoke(app, ["create", "hello", "world"])
 
     expect(Path("/hello/input").exists()).to(be_true)
@@ -33,9 +41,7 @@ def test_create_tasks(fs):
     expect(Path("/world/src").exists()).to(be_true)
 
 
-def test_create_subtasks(fs):
-    runner = CliRunner()
-    result = runner.invoke(app, ["init"])
+def test_create_subtasks(runner, fs):
     result = runner.invoke(app, ["create", "hello"])
 
     os.chdir("hello")
@@ -51,20 +57,30 @@ def test_create_subtasks(fs):
     expect(Path("/hello/world/src").exists()).to(be_true)
 
     yaml = YAML()
-    task_dict = dict(yaml.load(Path("/hello/task.yml")))
+    task_dict = read_config_file("/hello/task.yml")
 
-    expect(task_dict).to(equal({"entrypoint": "", "subtasks": ["world"]}))
+    expect(task_dict["name"]).to(equal("hello"))
+    expect(task_dict["entrypoint"]).to(equal(""))
+    expect(task_dict["subtasks"]).to(equal(["world"]))
 
 
-def test_runs_current_task(fs):
-    runner = CliRunner()
-    result = runner.invoke(app, ["init"])
+def test_create_errs_if_creating_task_from_invalid_location(runner, fs):
+    Path("/not_a_task").mkdir(parents=True, exist_ok=True)
+    os.chdir("not_a_task")
+
+    result = runner.invoke(app, ["create", "hello"])
+
+    expect(result.exit_code).to(equal(1))
+    expect(result.stderr).to(contain("Cannot create task"))
+
+
+def test_runs_current_task(runner, fs):
     result = runner.invoke(app, ["create", "hello"])
 
     os.chdir("hello")
 
     with open("/hello/task.yml", "w") as f:
-        f.write("entrypoint: echo hello\nsubtasks: []")
+        f.write("name: hello\nentrypoint: echo hello\nsubtasks: []")
 
     mock_result = subprocess.CompletedProcess(
         args=["echo", "hello"], returncode=0, stdout="world\n"
@@ -76,9 +92,7 @@ def test_runs_current_task(fs):
         expect(result.exit_code).to(equal(0))
 
 
-def test_runs_whole_project(fs):
-    runner = CliRunner()
-    result = runner.invoke(app, ["init"])
+def test_runs_whole_project(runner, fs):
     result = runner.invoke(app, ["create", "hello"])
     result = runner.invoke(app, ["create", "world"])
 
@@ -105,3 +119,23 @@ def test_runs_whole_project(fs):
             ]
         )
         expect(result.exit_code).to(equal(0))
+
+
+def test_tree_enumerates_tasks_and_subtasks(runner, fs):
+    result = runner.invoke(app, ["create", "hello"])
+    result = runner.invoke(app, ["create", "world"])
+
+    os.chdir("/world")
+    result = runner.invoke(app, ["create", "subtask1"])
+
+    result = runner.invoke(app, ["tree"])
+
+    expect(result.stdout).to(
+        equal(
+            """1. test
+├── 2. hello
+└── 3. world
+    └── 4. subtask1
+"""
+        )
+    )

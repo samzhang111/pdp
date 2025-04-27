@@ -10,6 +10,10 @@ from expects import *
 import pytest
 
 
+def read_config_file(filename):
+    return dict(YAML().load(Path(filename)))
+
+
 # Pre-existing task fixture
 @pytest.fixture
 def hello_world_tasks(fs):
@@ -35,7 +39,7 @@ def make_task(pdp):
 
 @pytest.fixture
 def config(fs):
-    config = PDPConfig(Path("pdp.yml"))
+    config = PDPConfig("test", Path("pdp.yml"))
 
     yield config
 
@@ -58,14 +62,14 @@ def yaml_without_tasks(fs):
 
 @pytest.fixture
 def pdp(fs):
-    pdp = PDP()
+    pdp = PDP("test")
     pdp.initialize()
 
     yield pdp
 
 
 def test_pdp_uninitialized_when_config_file_does_not_exist(fs):
-    pdp = PDP()
+    pdp = PDP("test")
 
     expect(pdp.initialized).to(be_false)
 
@@ -74,7 +78,7 @@ def test_pdp_uninitialized_when_config_file_empty(empty_pdp_yaml, fs):
     path = Path("pdp.yml")
     path.touch()
 
-    pdp = PDP()
+    pdp = PDP("test")
     expect(pdp.initialized).to(be_false)
 
     pdp.initialize()
@@ -83,8 +87,8 @@ def test_pdp_uninitialized_when_config_file_empty(empty_pdp_yaml, fs):
 
 
 def test_pdp_inits_empty_task_list(fs, pdp):
-    with open("pdp.yml") as f:
-        expect(f.read().strip()).to(equal("tasks: []"))
+    config_dict = read_config_file("pdp.yml")
+    expect(config_dict["tasks"]).to(equal([]))
 
 
 def test_pdp_init_is_idempotent_on_files(hello_world_tasks, pdp):
@@ -97,7 +101,7 @@ def test_pdp_validate_fails_if_config_has_no_tasks(empty_pdp_yaml):
 
 
 def test_pdp_initialize_raises_error_if_invalid_config(yaml_without_tasks):
-    config = PDPConfig("pdp.yml")
+    config = PDPConfig("test", "pdp.yml")
     with pytest.raises(InvalidConfigError):
         pdp = PDP(config=config)
         pdp.initialize()
@@ -217,7 +221,9 @@ def test_pdp_creates_task_from_current_location(hello_world_tasks, pdp):
     yaml = YAML()
     task_yaml = dict(yaml.load(Path("/hello/task.yml")))
 
-    expect(task_yaml).to(equal({"entrypoint": "", "subtasks": ["foo"]}))
+    expect(task_yaml["name"]).to(equal("hello"))
+    expect(task_yaml["entrypoint"]).to(equal(""))
+    expect(task_yaml["subtasks"]).to(equal(["foo"]))
 
 
 def test_pdp_runs_all_tasks(make_task, pdp):
@@ -226,3 +232,44 @@ def test_pdp_runs_all_tasks(make_task, pdp):
     pdp.run_all()
 
     make_task.run.assert_called_once()
+
+
+def test_pdp_picks_up_name_from_config(pdp):
+    pdp.scaffold()
+
+    pdp2 = PDP()
+    pdp2.initialize()
+
+    expect(pdp2.project_name).to(equal("test"))
+
+
+def test_pdp_task_tree_generates_tree(pdp):
+    pdp.scaffold()
+
+    pdp.create_task("hello")
+    pdp.create_task("world")
+
+    os.chdir("/hello")
+    pdp.create_task_from_current_location("foo")
+
+    os.chdir("/world")
+    pdp.create_task_from_current_location("bar")
+
+    tree = pdp.task_tree()
+
+    expect(tree.label).to(equal("1. test"))
+    expect(tree.children[0].label).to(equal("2. hello"))
+    expect(tree.children[0].children[0].label).to(equal("3. foo"))
+    expect(tree.children[1].label).to(equal("4. world"))
+    expect(tree.children[1].children[0].label).to(equal("5. bar"))
+
+
+def test_pdp_create_task_from_current_location_raises_if_not_in_task(fs):
+    pdp = PDP()
+    pdp.initialize()
+
+    Path("/not_a_task").mkdir(parents=True, exist_ok=True)
+    os.chdir("/not_a_task")
+
+    with pytest.raises(ValueError) as excinfo:
+        pdp.create_task_from_current_location("foo")

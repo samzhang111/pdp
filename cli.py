@@ -1,6 +1,7 @@
 import typer
 from typing_extensions import Annotated
 from rich.console import Console
+from rich import print as rprint
 
 from pdp import PDP, PDPConfig
 
@@ -26,12 +27,14 @@ def load_pdp():
 
 
 @app.command()
-def init():
+def init(
+    project_name: str = typer.Option(None, "--name", "-n", prompt="Project name")
+) -> None:
     """
     Initialize the project.
     """
 
-    pdp = PDP()
+    pdp = PDP(project_name)
     pdp.initialize()
 
 
@@ -53,8 +56,14 @@ def create(task_names: list[str]) -> None:
 
     pdp = load_pdp()
 
-    for task_name in task_names:
-        pdp.create_task_from_current_location(task_name)
+    try:
+        for task_name in task_names:
+            pdp.create_task_from_current_location(task_name)
+    except ValueError:
+        err_console.print(
+            "Cannot create task from current location. Not at project root or a valid task directory."
+        )
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -93,6 +102,19 @@ def run(task_name: Annotated[str, typer.Argument()] = None) -> None:
             return_code = pdp.run_task(current_task.task_name)
 
     raise typer.Exit(return_code)
+
+
+@app.command()
+def tree() -> None:
+    """
+    Print the task tree.
+    """
+
+    pdp = load_pdp()
+    tree = pdp.task_tree()
+    rprint(tree)
+
+    raise typer.Exit(0)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,13 @@
 from pathlib import Path
 import subprocess
 
+from rich.tree import Tree
+
 from pdp_config import TaskConfig
 
 
 def is_empty(directory):
-    return not any(directory.iterdir())
+    return not directory.exists() or not any(directory.iterdir())
 
 
 class Task:
@@ -59,13 +61,40 @@ class Task:
             and is_empty(self.output_folder)
             and is_empty(self.src_folder)
         ):
-            self.input_folder.rmdir()
-            self.output_folder.rmdir()
-            self.src_folder.rmdir()
+            try:
+                self.input_folder.rmdir()
+            except FileNotFoundError:
+                pass
+
+            try:
+                self.output_folder.rmdir()
+            except FileNotFoundError:
+                pass
+
+            try:
+                self.src_folder.rmdir()
+            except FileNotFoundError:
+                pass
 
         self.subtasks.append(subtask)
 
         return subtask
+
+    def construct_subtree(self, counter, parent_tree) -> None:
+        """Create a tree structure of the tasks and subtasks.
+        Subtasks are recursively nested within tasks."""
+        num = next(counter)
+        node = parent_tree.add(f"{num}. {self.task_name}")
+        for task in self.subtasks:
+            task.construct_subtree(counter, node)
+
+    def subtree_traversal(self, counter, callback) -> None:
+        """Iterate over the tasks and subtasks in a tree structure.
+        Subtasks are recursively nested within tasks."""
+        num = next(counter)
+        callback(num, self)
+        for task in self.subtasks:
+            task.subtree_traversal(counter, callback)
 
     @property
     def entrypoint(self) -> str:

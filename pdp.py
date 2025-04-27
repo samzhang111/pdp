@@ -1,4 +1,7 @@
 from pathlib import Path
+from itertools import count
+
+from rich.tree import Tree
 
 from task import Task
 from pdp_config import PDPConfig, TaskConfig
@@ -21,11 +24,15 @@ def find_project_root(config_name) -> Path:
 
 
 class PDP(object):
-    def __init__(self, config: PDPConfig | None = None) -> None:
+    def __init__(
+        self, project_name: str = None, config: PDPConfig | None = None
+    ) -> None:
+        self.project_name = project_name
+
         if config:
             self.config = config
         else:
-            self.config = PDPConfig(self.project_root / "pdp.yml")
+            self.config = PDPConfig(project_name, self.project_root / "pdp.yml")
         self.tasks = []
 
     def initialize(self) -> None:
@@ -33,6 +40,7 @@ class PDP(object):
             raise InvalidConfigError("Invalid config file")
 
         self.config.initialize()
+        self.project_name = self.config.name
 
         for task in self.config.tasks:
             self.create_task(task)
@@ -62,10 +70,14 @@ class PDP(object):
         current_task = self.current_task
 
         if isinstance(current_task, Task):
-            current_task.create_subtask(task_name)
+            return current_task.create_subtask(task_name)
 
         elif current_task == ".":
-            self.create_task(task_name)
+            return self.create_task(task_name)
+
+        raise ValueError(
+            "Tried to create task from location that is neither project root nor a task."
+        )
 
     def scaffold(self) -> None:
         for task in self.tasks:
@@ -86,6 +98,16 @@ class PDP(object):
 
     def _find_task_by_name(self, task_name: str) -> Task | None:
         return next((t for t in self.tasks if t.task_name == task_name), None)
+
+    def task_tree(self) -> Tree:
+        """Create a tree structure of the tasks and subtasks.
+        Subtasks are recursively nested within tasks."""
+        tree = Tree(f"1. {self.project_name}")
+        counter = count(2)
+        for task in self.tasks:
+            task.construct_subtree(counter, tree)
+
+        return tree
 
     @property
     def current_path(self) -> Path:

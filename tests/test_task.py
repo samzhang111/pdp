@@ -2,6 +2,7 @@ import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
+from itertools import count
 
 from ruamel.yaml import YAML
 from expects import *
@@ -9,6 +10,10 @@ import pytest
 
 from task import Task
 from pdp_config import TaskConfig
+
+
+def read_config_file(filename):
+    return dict(YAML().load(Path(filename)))
 
 
 @pytest.fixture
@@ -40,19 +45,20 @@ def test_task_create_subtask(task, fs):
 
     subtask = task.create_subtask("world")
 
-    with open(task.task_config.path_to_config, "r") as f:
-        yaml = YAML()
-        task_dict = dict(yaml.load(f))
+    task_dict = read_config_file("/hello/task.yml")
 
-    expect(task_dict).to(equal({"entrypoint": "", "subtasks": ["world"]}))
+    expect(task_dict["name"]).to(equal("hello"))
+    expect(task_dict["entrypoint"]).to(equal(""))
+    expect(task_dict["subtasks"]).to(equal(["world"]))
 
     expect(Path("/hello/world/input").exists()).to(be_true)
     expect(Path("/hello/world/output").exists()).to(be_true)
     expect(Path("/hello/world/src").exists()).to(be_true)
 
-    yaml = YAML()
-    subtask_dict = dict(yaml.load(Path("/hello/world/task.yml")))
-    expect(subtask_dict).to(equal({"entrypoint": "", "subtasks": []}))
+    subtask_dict = read_config_file("/hello/world/task.yml")
+    expect(subtask_dict["name"]).to(equal("world"))
+    expect(subtask_dict["entrypoint"]).to(equal(""))
+    expect(subtask_dict["subtasks"]).to(equal([]))
 
     # Removes the hello input, output, and src
     expect(Path("/hello/input").exists()).to(be_false)
@@ -110,3 +116,20 @@ def test_task_runs_subtasks_if_exist(task, fs):
         return_code = task.run()
         mock_run.assert_called_once_with("echo world", cwd=subtask.task_directory)
         expect(return_code).to(equal(0))
+
+
+def test_task_traverses_subtree(task, fs):
+    task.scaffold()
+    subtask = task.create_subtask("world")
+    subtask2 = task.create_subtask("world2")
+    subtask_world_child = task.create_subtask("world_child")
+
+    counter = count(1)
+
+    results = []
+    callback = lambda num, task: results.append((num, task.task_name))
+    task.subtree_traversal(counter, callback)
+
+    expect(results).to(
+        equal([(1, "hello"), (2, "world"), (3, "world2"), (4, "world_child")])
+    )

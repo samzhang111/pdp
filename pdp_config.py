@@ -16,12 +16,13 @@ def requires_initialization(method):
 
 
 class GenericConfig(ABC):
-    def __init__(self, task_key, path_to_config) -> None:
+    def __init__(self, name, task_key, path_to_config) -> None:
         self.yaml = YAML()
 
         self.task_key = task_key
         self.path_to_config = Path(path_to_config).resolve()
         self.config = self.read_config_file()
+        self.name = name or self.config.get("name", None)
 
     def read_config_file(self):
         try:
@@ -64,10 +65,7 @@ class GenericConfig(ABC):
         return self.config.get(self.task_key, [])
 
     def __repr__(self):
-        try:
-            return f"{self.__class__.__name__}({self.task_name}, {self.path_to_config})"
-        except AttributeError:
-            return f"{self.__class__.__name__}({self.path_to_config})"
+        return f"{self.__class__.__name__}({self.name}, {self.path_to_config})"
 
     @abstractmethod
     def initialize(self):
@@ -79,14 +77,14 @@ class GenericConfig(ABC):
 
 
 class PDPConfig(GenericConfig):
-    def __init__(self, path_to_config) -> None:
-        super().__init__("tasks", path_to_config)
+    def __init__(self, project_name, path_to_config) -> None:
+        super().__init__(project_name, "tasks", path_to_config)
 
     def initialize(self):
         if self.initialized:
             return
 
-        self.yaml.dump({"tasks": []}, self.path_to_config)
+        self.yaml.dump({"name": self.name, "tasks": []}, self.path_to_config)
 
         self.config = self.read_config_file()
 
@@ -102,15 +100,16 @@ class PDPConfig(GenericConfig):
 
 class TaskConfig(GenericConfig):
     def __init__(self, task_name, path_to_config) -> None:
-        self.task_name = task_name
-        super().__init__("subtasks", path_to_config)
+        super().__init__(task_name, "subtasks", path_to_config)
 
     def initialize(self):
         if self.initialized:
             self.config = self.read_config_file()
             return
 
-        self.yaml.dump({"entrypoint": "", "subtasks": []}, self.path_to_config)
+        self.yaml.dump(
+            {"name": self.name, "entrypoint": "", "subtasks": []}, self.path_to_config
+        )
 
         self.config = self.read_config_file()
 

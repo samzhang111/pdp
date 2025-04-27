@@ -10,8 +10,12 @@ from pdp_config import PDPConfig, TaskConfig
 
 @pytest.fixture
 def config(fs):
-    config = PDPConfig(Path("pdp.yml"))
+    config = PDPConfig("test", Path("pdp.yml"))
     yield config
+
+
+def read_config_file(filename):
+    return dict(YAML().load(Path(filename)))
 
 
 def test_config_initialization(config, fs):
@@ -26,8 +30,9 @@ def test_config_initialization(config, fs):
 def test_config_initialize_creates_file(config, fs):
     config.initialize()
 
-    with open("pdp.yml") as f:
-        expect(f.read().strip()).to(equal("tasks: []"))
+    config_dict = read_config_file("pdp.yml")
+    expect(config_dict["name"]).to(equal("test"))
+    expect(config_dict["tasks"]).to(equal([]))
 
 
 def test_config_add_task(config, fs):
@@ -42,8 +47,8 @@ def test_config_add_task(config, fs):
     config.add_task("hello")
     expect(config.config["tasks"]).to(equal(["hello", "world"]))
 
-    with open("pdp.yml") as f:
-        expect(f.read().strip()).to(equal("tasks:\n- hello\n- world"))
+    config_dict = read_config_file("pdp.yml")
+    expect(config_dict["tasks"]).to(equal(["hello", "world"]))
 
 
 def test_config_validate(config, fs):
@@ -65,8 +70,9 @@ def test_task_config_initializes_with_entrypoint_and_subtasks(fs):
     config = TaskConfig("task1", "task.yml")
     config.initialize()
 
-    with open("task.yml") as f:
-        expect(f.read().strip()).to(equal("entrypoint: ''\nsubtasks: []"))
+    config_dict = read_config_file("task.yml")
+    expect(config_dict["entrypoint"]).to(equal(""))
+    expect(config_dict["subtasks"]).to(equal([]))
 
 
 def test_task_config_validation_requires_subtasks_and_entrypoint(fs):
@@ -91,9 +97,9 @@ def test_task_adds_its_own_tasks(fs):
     config.add_task("task2")
     expect(config.tasks).to(equal(["task2"]))
 
-    yaml = YAML()
-    task_yaml = dict(yaml.load(Path("task.yml")))
-    expect(task_yaml).to(equal({"entrypoint": "", "subtasks": ["task2"]}))
+    config_dict = read_config_file("task.yml")
+    expect(config_dict["entrypoint"]).to(equal(""))
+    expect(config_dict["subtasks"]).to(equal(["task2"]))
 
 
 def test_task_config_repr_prints_name_and_path(fs):
@@ -102,4 +108,4 @@ def test_task_config_repr_prints_name_and_path(fs):
 
 
 def test_pdp_config_repr_prints_config_path(config, fs):
-    expect(str(config)).to(equal("PDPConfig(/pdp.yml)"))
+    expect(str(config)).to(equal("PDPConfig(test, /pdp.yml)"))
