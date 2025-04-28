@@ -8,6 +8,7 @@
 
 Principled Data Processing is a reproducible and readable way to organize data analyses.
 `pdp` is a command-line tool that makes using Principled Data Processing very simple.
+This tool is designed both to be opinionated (see [Principles](#principles) below), as well as easy to bolt onto existing PDP projects (see [Usage](#usage)).
 
 ##### Table of contents
 
@@ -19,7 +20,7 @@ Principled Data Processing is a reproducible and readable way to organize data a
 
 ## Principles
 
-As in says in the title, Principled Data Processing lays out a few, well, principles. These principles are:
+As in says in the title, Principled Data Processing lays out a few, well, principles (aka opinions). These principles are:
 
 1. Projects are separated into _tasks_, which are folders in the filesystem. A task is either a collection of subtasks, which are themselves subdirectories in the task, or an _atomic_ task which contains no further subtasks.
 
@@ -29,51 +30,43 @@ As in says in the title, Principled Data Processing lays out a few, well, princi
 
 ## Install
 
-Soon to be available on PyPI. In the repository, `cli.py` is the commandline tool, which I alias to `pdp`.
+Soon to be available on PyPI. Meanwhile, clone the repository, and run `poetry install`.
 
 **Requirements:**
 
 - Python 3.11+
+- [poetry](https://python-poetry.org/)
 
 ## Usage
 
 The motivation for this tool is to streamline the application of these principles to any data analysis project.
 
-### Starting a project
+### Editing an existing PDP project
 
-Run `pdp init` from the root of a project. It creates a file called `pdp.yml`, which contains metadata about the project, and marks the project root.
+- Run `pdp init` from the root of a project. It creates a file called `pdp.yml`, which contains metadata about the project, and marks the project root.
+- Edit the `tasks` key in the `pdp.yml` file to list all the tasks in order.
+- Run `pdp init` again, to initialize the `task.yml` files within each of those tasks.
+- Edit each `task.yml` to designate the entrypoint, which would be `make` for most PDP projects.
+- Run `pdp run` from within a task to run that task. If in the project root, this runs all tasks.
 
-### Creating tasks
+### Starting a new project from scratch
 
-Run `pdp create <name_of_task>` to create a task. This creates a directory called <name_of_task>, as well as the folders within that task.
+- Run `pdp init` from the root of a project. It creates a file called `pdp.yml`, which contains metadata about the project, and marks the project root.
+- Run `pdp create <name_of_task1> <name_of_task2> ... <name_of_taskN>` to create tasks. This creates directories for each task, a `task.yml` configuration file, as well as the `src`, `input`, and `output` folders within that task.
+- Edit each `task.yml` to designate a specific command to run as an entrypoint, such as `make`.
+- Run `pdp run` from within a task to run that task. If in the project root, this runs all tasks.
 
-### Creating tasks
+### Additional commands
 
-Run `pdp create <name_of_task>` to create a task. If in the project root, this creates a task. If in a task, this creates a subtask.
-
-### Running tasks
-
-Run `pdp run` from within a task to run that task. If in the project root, this runs all tasks.
-
-### Listing tasks
-
-Run `pdp tree` to see the tree structure of all tasks.
-
-### Validating project
-
-Run `pdp validate` to validate the project configuration.
-
-### Further help
-
-This documentation is work in progress. Run `pdp --help` to see the .
+- Run `pdp tree` to see the tree structure of all tasks.
+- Run `pdp validate` to validate the project configuration.
 
 ## Contributing
 
-Contributions should be tested. All code should be formatted using [black](https://github.com/psf/black), and tested. Use `pytest` to run the tests.
+All code should be tested and formatted using [black](https://github.com/psf/black).
 
 ## About
 
 This work was developed with the support of a [US Research Software Sustainability Institute](https://urssi.us/) early-career fellowship.
-Thanks to helpful discussions with Patrick Ball, Tarak Shah, Bailey Passmore, and Ayyub Ibrahim, and many conversations about PDP with Daniel Manrique-Vallier.
+Thanks to helpful discussions with Patrick Ball, Bailey Passmore, and Tarak Shah.
 Principled Data Processing was a framework developed by the [Human Rights Data Analysis Group](https://hrdag.org) in the early 2000s, to facilitate reproducibility in their forensic human rights work.
-Incidentally, I've come to think it's one of the better ways of organizing data analysis projects in general.
