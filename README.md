@@ -20,8 +20,6 @@ This tool is designed both to be opinionated (see [Principles](#principles) belo
 
 ## Principles
 
-As in says in the title, Principled Data Processing lays out a few, well, principles (aka opinions). These principles are:
-
 1. Projects are separated into _tasks_, which are folders in the filesystem. A task is either a collection of subtasks, which are themselves subdirectories in the task, or an _atomic_ task which contains no further subtasks.
 
 2. Atomic tasks contain folders for `input` (input data for the task), `src` (source code), and `output` (where the task writes its outputs). Importantly, tasks only write to their output folders, and never read from their own outputs.
