@@ -37,8 +37,6 @@ Soon to be available on PyPI. Meanwhile, clone the repository, and run `poetry i
 
 ## Usage
 
-The motivation for this tool is to streamline the application of these principles to any data analysis project.
-
 ### Editing an existing PDP project
 
 - Run `pdp init` from the root of a project. It creates a file called `pdp.yml`, which contains metadata about the project, and marks the project root.
