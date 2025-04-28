@@ -16,6 +16,9 @@ dependencies = [
 
 [tool.poetry]
 
+[tool.poetry.scripts]
+pdp = "pdp.cli:app"
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
 pyfakefs = "^5.8.0"

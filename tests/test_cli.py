@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 from ruamel.yaml import YAML
 
-from cli import app
+from pdp.cli import app
 
 
 @pytest.fixture
