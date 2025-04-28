@@ -3,9 +3,9 @@ from itertools import count
 
 from rich.tree import Tree
 
-from task import Task
-from pdp_config import PDPConfig, TaskConfig
-from pdp_errors import InvalidConfigError
+from .task import Task
+from .pdp_config import PDPConfig, TaskConfig
+from .pdp_errors import InvalidConfigError
 
 
 def find_project_root(config_name) -> Path:

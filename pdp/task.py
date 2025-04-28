@@ -3,7 +3,7 @@ import subprocess
 
 from rich.tree import Tree
 
-from pdp_config import TaskConfig
+from .pdp_config import TaskConfig
 
 
 def is_empty(directory):

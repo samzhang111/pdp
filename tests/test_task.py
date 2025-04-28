@@ -8,8 +8,8 @@ from ruamel.yaml import YAML
 from expects import *
 import pytest
 
-from task import Task
-from pdp_config import TaskConfig
+from pdp.task import Task
+from pdp.pdp_config import TaskConfig
 
 
 def read_config_file(filename):

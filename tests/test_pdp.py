@@ -4,8 +4,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from ruamel.yaml import YAML
 
-from pdp import PDP, PDPConfig
-from pdp_errors import InvalidConfigError
+from pdp.pdp import PDP, PDPConfig
+from pdp.pdp_errors import InvalidConfigError
 from expects import *
 import pytest
 

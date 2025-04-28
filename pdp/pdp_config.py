@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 from ruamel.yaml import YAML
 
-from pdp_errors import UninitializedProjectError
+from .pdp_errors import UninitializedProjectError
 
 
 def requires_initialization(method):

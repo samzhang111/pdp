@@ -5,7 +5,7 @@ from ruamel.yaml import YAML
 from expects import *
 import pytest
 
-from pdp_config import PDPConfig, TaskConfig
+from pdp.pdp_config import PDPConfig, TaskConfig
 
 
 @pytest.fixture

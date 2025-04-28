@@ -3,7 +3,7 @@ from typing_extensions import Annotated
 from rich.console import Console
 from rich import print as rprint
 
-from pdp import PDP, PDPConfig
+from pdp.pdp import PDP, PDPConfig
 
 app = typer.Typer()
 err_console = Console(stderr=True)
