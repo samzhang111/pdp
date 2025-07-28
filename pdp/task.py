@@ -1,5 +1,7 @@
 from pathlib import Path
 import subprocess
+import time
+import re
 
 from rich.tree import Tree
 
@@ -39,7 +41,10 @@ class Task:
             returncodes.append(subtask.run())
 
         if self.entrypoint:
-            result = subprocess.run(self.entrypoint, cwd=self.task_directory)
+            if self.task_config.uses_slurm:
+                result = self._run_slurm_task()
+            else:
+                result = subprocess.run(self.entrypoint, cwd=self.task_directory)
             returncodes.append(result.returncode)
 
         all_success = all([rc == 0 for rc in returncodes])
@@ -48,6 +53,65 @@ class Task:
             return 0
 
         return 1
+
+    def _run_slurm_task(self):
+        script_path = self.task_directory / self.task_config.slurm_script
+        if not script_path.exists():
+            raise FileNotFoundError(f"SLURM script not found: {script_path}")
+        
+        # Submit job to SLURM
+        result = subprocess.run(
+            ["sbatch", str(script_path)], 
+            cwd=self.task_directory, 
+            capture_output=True, 
+            text=True
+        )
+        
+        if result.returncode != 0:
+            return result
+        
+        # Extract job ID from sbatch output
+        job_id = self._extract_job_id(result.stdout)
+        if job_id:
+            # Wait for job completion
+            return self._wait_for_slurm_job(job_id)
+        
+        return result
+
+    def _extract_job_id(self, sbatch_output):
+        match = re.search(r'Submitted batch job (\d+)', sbatch_output)
+        return match.group(1) if match else None
+
+    def _wait_for_slurm_job(self, job_id):
+        while True:
+            result = subprocess.run(
+                ["squeue", "-j", job_id, "-h"], 
+                capture_output=True, 
+                text=True
+            )
+            
+            if result.returncode != 0 or not result.stdout.strip():
+                # Job no longer in queue, check final status
+                break
+            
+            time.sleep(5)  # Check every 5 seconds
+        
+        # Get job exit status
+        result = subprocess.run(
+            ["sacct", "-j", job_id, "--format=ExitCode", "-n"], 
+            capture_output=True, 
+            text=True
+        )
+        
+        if result.returncode == 0:
+            exit_code_line = result.stdout.strip().split('\n')[0]
+            exit_code = exit_code_line.split(':')[0].strip()
+            mock_result = type('MockResult', (), {'returncode': int(exit_code) if exit_code.isdigit() else 1})()
+            return mock_result
+        
+        # If we can't get the exit code, assume failure
+        mock_result = type('MockResult', (), {'returncode': 1})()
+        return mock_result
 
     def create_subtask(self, subtask_name: str) -> None:
         self.task_config.add_task(subtask_name)

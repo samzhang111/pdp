@@ -1,7 +1,7 @@
 import os
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from itertools import count
 
 from ruamel.yaml import YAML
@@ -133,3 +133,166 @@ def test_task_traverses_subtree(task, fs):
     expect(results).to(
         equal([(1, "hello"), (2, "world"), (3, "world2"), (4, "world_child")])
     )
+
+
+# SLURM functionality tests
+def test_task_config_has_slurm_disabled_by_default(task, fs):
+    task.scaffold()
+    
+    task_dict = read_config_file("/hello/task.yml")
+    
+    expect(task_dict["slurm"]["enabled"]).to(be_false)
+    expect(task_dict["slurm"]["script"]).to(equal(""))
+
+
+def test_task_config_detects_slurm_enabled(task, fs):
+    task.scaffold()
+    
+    with open(task.task_config.path_to_config, "w") as f:
+        f.write("entrypoint: make\nsubtasks: []\nslurm:\n  enabled: true\n  script: job.sbatch")
+    
+    expect(task.task_config.uses_slurm).to(be_true)
+    expect(task.task_config.slurm_script).to(equal("job.sbatch"))
+
+
+def test_task_runs_sbatch_when_slurm_enabled(task, fs):
+    task.scaffold()
+    
+    # Create SLURM script file
+    slurm_script = task.task_directory / "job.sbatch"
+    slurm_script.write_text("#!/bin/bash\necho hello")
+    
+    with open(task.task_config.path_to_config, "w") as f:
+        f.write("entrypoint: make\nsubtasks: []\nslurm:\n  enabled: true\n  script: job.sbatch")
+    
+    # Mock sbatch submission
+    sbatch_result = subprocess.CompletedProcess(
+        args=["sbatch", "job.sbatch"], returncode=0, stdout="Submitted batch job 12345\n"
+    )
+    
+    # Mock squeue (job running then completed)
+    squeue_running = subprocess.CompletedProcess(
+        args=["squeue", "-j", "12345", "-h"], returncode=0, stdout="12345 main job.sbatch user R 0:01"
+    )
+    squeue_completed = subprocess.CompletedProcess(
+        args=["squeue", "-j", "12345", "-h"], returncode=0, stdout=""
+    )
+    
+    # Mock sacct (job exit status)
+    sacct_result = subprocess.CompletedProcess(
+        args=["sacct", "-j", "12345", "--format=ExitCode", "-n"], returncode=0, stdout="0:0\n"
+    )
+    
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = [sbatch_result, squeue_running, squeue_completed, sacct_result]
+        with patch("time.sleep"):  # Speed up the test
+            return_code = task.run()
+        
+        expect(return_code).to(equal(0))
+        expect(mock_run.call_count).to(equal(4))
+
+
+def test_task_handles_slurm_job_failure(task, fs):
+    task.scaffold()
+    
+    # Create SLURM script file
+    slurm_script = task.task_directory / "job.sbatch"
+    slurm_script.write_text("#!/bin/bash\nexit 1")
+    
+    with open(task.task_config.path_to_config, "w") as f:
+        f.write("entrypoint: make\nsubtasks: []\nslurm:\n  enabled: true\n  script: job.sbatch")
+    
+    # Mock sbatch submission
+    sbatch_result = subprocess.CompletedProcess(
+        args=["sbatch", "job.sbatch"], returncode=0, stdout="Submitted batch job 12345\n"
+    )
+    
+    # Mock squeue (job completed)
+    squeue_completed = subprocess.CompletedProcess(
+        args=["squeue", "-j", "12345", "-h"], returncode=0, stdout=""
+    )
+    
+    # Mock sacct (job failed)
+    sacct_result = subprocess.CompletedProcess(
+        args=["sacct", "-j", "12345", "--format=ExitCode", "-n"], returncode=0, stdout="1:0\n"
+    )
+    
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = [sbatch_result, squeue_completed, sacct_result]
+        with patch("time.sleep"):
+            return_code = task.run()
+        
+        expect(return_code).to(equal(1))
+
+
+def test_task_raises_error_when_slurm_script_missing(task, fs):
+    task.scaffold()
+    
+    with open(task.task_config.path_to_config, "w") as f:
+        f.write("entrypoint: make\nsubtasks: []\nslurm:\n  enabled: true\n  script: missing.sbatch")
+    
+    with pytest.raises(FileNotFoundError):
+        task.run()
+
+
+def test_task_handles_sbatch_submission_failure(task, fs):
+    task.scaffold()
+    
+    # Create SLURM script file
+    slurm_script = task.task_directory / "job.sbatch"
+    slurm_script.write_text("#!/bin/bash\necho hello")
+    
+    with open(task.task_config.path_to_config, "w") as f:
+        f.write("entrypoint: make\nsubtasks: []\nslurm:\n  enabled: true\n  script: job.sbatch")
+    
+    # Mock sbatch failure
+    sbatch_result = subprocess.CompletedProcess(
+        args=["sbatch", "job.sbatch"], returncode=1, stdout="", stderr="sbatch: error"
+    )
+    
+    with patch("subprocess.run", return_value=sbatch_result):
+        return_code = task.run()
+        
+        expect(return_code).to(equal(1))
+
+
+def test_task_runs_subtasks_with_mixed_slurm_and_local(task, fs):
+    task.scaffold()
+    
+    # Create local subtask
+    local_subtask = task.create_subtask("local")
+    with open(local_subtask.task_config.path_to_config, "w") as f:
+        f.write("entrypoint: echo local\nsubtasks: []\nslurm:\n  enabled: false\n  script: \"\"")
+    
+    # Create SLURM subtask
+    slurm_subtask = task.create_subtask("slurm")
+    slurm_script = slurm_subtask.task_directory / "job.sbatch"
+    slurm_script.write_text("#!/bin/bash\necho slurm")
+    
+    with open(slurm_subtask.task_config.path_to_config, "w") as f:
+        f.write("entrypoint: make\nsubtasks: []\nslurm:\n  enabled: true\n  script: job.sbatch")
+    
+    # Mock subprocess calls
+    local_result = subprocess.CompletedProcess(
+        args=["echo", "local"], returncode=0, stdout="local\n"
+    )
+    
+    sbatch_result = subprocess.CompletedProcess(
+        args=["sbatch", "job.sbatch"], returncode=0, stdout="Submitted batch job 67890\n"
+    )
+    
+    squeue_completed = subprocess.CompletedProcess(
+        args=["squeue", "-j", "67890", "-h"], returncode=0, stdout=""
+    )
+    
+    sacct_result = subprocess.CompletedProcess(
+        args=["sacct", "-j", "67890", "--format=ExitCode", "-n"], returncode=0, stdout="0:0\n"
+    )
+    
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = [local_result, sbatch_result, squeue_completed, sacct_result]
+        with patch("time.sleep"):
+            return_code = task.run()
+        
+        expect(return_code).to(equal(0))
+        expect(mock_run.call_count).to(equal(4))

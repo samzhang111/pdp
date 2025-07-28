@@ -108,7 +108,7 @@ class TaskConfig(GenericConfig):
             return
 
         self.yaml.dump(
-            {"name": self.name, "entrypoint": "", "subtasks": []}, self.path_to_config
+            {"name": self.name, "entrypoint": "", "subtasks": [], "slurm": {"enabled": False, "script": ""}}, self.path_to_config
         )
 
         self.config = self.read_config_file()
@@ -127,3 +127,22 @@ class TaskConfig(GenericConfig):
     def entrypoint(self):
         self.config = self.read_config_file()
         return self.config["entrypoint"]
+
+    @property
+    @requires_initialization
+    def slurm_config(self):
+        self.config = self.read_config_file()
+        default_slurm = {"enabled": False, "script": ""}
+        return self.config.get("slurm", default_slurm)
+
+    @property
+    @requires_initialization
+    def uses_slurm(self):
+        return self.slurm_config.get("enabled", False)
+
+    @property
+    @requires_initialization
+    def slurm_script(self):
+        if not self.uses_slurm:
+            return None
+        return self.slurm_config.get("script", "")
