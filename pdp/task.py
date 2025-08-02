@@ -44,7 +44,7 @@ class Task:
             if self.task_config.uses_slurm:
                 result = self._run_slurm_task()
             else:
-                result = subprocess.run(self.entrypoint, cwd=self.task_directory)
+                result = subprocess.run(self.entrypoint, shell=True, cwd=self.task_directory)
             returncodes.append(result.returncode)
 
         all_success = all([rc == 0 for rc in returncodes])

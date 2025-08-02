@@ -158,7 +158,7 @@ def test_pdp_runs_task_by_name(pdp):
 
     with patch("subprocess.run", return_value=mock_result) as mock_run:
         return_code = pdp.run_task("hello")
-        mock_run.assert_called_once_with("make", cwd=task.task_directory)
+        mock_run.assert_called_once_with("make", shell=True, cwd=task.task_directory)
         expect(return_code).to(equal(0))
 
 

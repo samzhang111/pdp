@@ -88,7 +88,7 @@ def test_runs_current_task(runner, fs):
 
     with patch("subprocess.run", return_value=mock_result) as mock_run:
         result = runner.invoke(app, ["run"])
-        mock_run.assert_called_once_with("echo hello", cwd=Path("/hello"))
+        mock_run.assert_called_once_with("echo hello", shell=True, cwd=Path("/hello"))
         expect(result.exit_code).to(equal(0))
 
 
@@ -114,8 +114,8 @@ def test_runs_whole_project(runner, fs):
         result = runner.invoke(app, ["run"])
         mock_run.assert_has_calls(
             [
-                call("echo hello", cwd=Path("/hello")),
-                call("echo world", cwd=Path("/world")),
+                call("echo hello", shell=True, cwd=Path("/hello")),
+                call("echo world", shell=True, cwd=Path("/world")),
             ]
         )
         expect(result.exit_code).to(equal(0))

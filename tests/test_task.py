@@ -36,7 +36,7 @@ def test_task_runs_entrypoint_in_config(task, fs):
 
     with patch("subprocess.run", return_value=mock_result) as mock_run:
         return_code = task.run()
-        mock_run.assert_called_once_with("echo hello", cwd=task.task_directory)
+        mock_run.assert_called_once_with("echo hello", shell=True, cwd=task.task_directory)
         expect(return_code).to(equal(0))
 
 
@@ -114,7 +114,7 @@ def test_task_runs_subtasks_if_exist(task, fs):
 
     with patch("subprocess.run", return_value=mock_result) as mock_run:
         return_code = task.run()
-        mock_run.assert_called_once_with("echo world", cwd=subtask.task_directory)
+        mock_run.assert_called_once_with("echo world", shell=True, cwd=subtask.task_directory)
         expect(return_code).to(equal(0))
 
 
