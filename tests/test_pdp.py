@@ -566,6 +566,39 @@ class TestRunFailureHandling:
         expect(result.skipped).to(equal([]))
 
 
+class TestIncompleteTasks:
+    def test_task_without_entrypoint_throws_error(self, real_pdp):
+        real_pdp.create_task("task1")
+
+        result = real_pdp.run_all()
+
+        expect(result.no_entrypoint).to(equal(["task1"]))
+        expect(result.exit_code).to(equal(1))
+
+    def test_task_without_entrypoint_skips_downstream_tasks(
+        self, import_and_clean_project
+    ):
+        import_and_clean_project.create_task("report")
+        write_task_yml("clean", entrypoint="touch output/ran", depends_on=["import"])
+        write_task_yml("report", entrypoint="touch output/ran", depends_on=["clean"])
+
+        result = import_and_clean_project.run_all()
+
+        expect(result.skipped).to(equal(["clean", "report"]))
+        expect(Path("clean/output/ran").exists()).to(be_false)
+        expect(Path("report/output/ran").exists()).to(be_false)
+
+    def test_unrelated_tasks_run_after_task_without_entrypoint(
+        self, import_and_clean_project
+    ):
+        import_and_clean_project.create_task("other")
+        write_task_yml("other", entrypoint="touch output/ran")
+
+        import_and_clean_project.run_all()
+
+        expect(Path("other/output/ran").exists()).to(be_true)
+
+
 class TestFailureCleanup:
     def test_failed_run_removes_only_its_files(self, real_pdp):
         task = real_pdp.create_task("task1")
@@ -609,7 +642,6 @@ class TestForceRun:
 
 class TestTaskDepValidation:
     def test_task_dep_without_entrypoint_is_valid(self, import_and_clean_project):
-        # Has to check hand/ folder for staleness
         expect(import_and_clean_project.validation_errors()).to(equal([]))
 
 
@@ -625,7 +657,7 @@ class TestRunReport:
 
         expect(result.current).to(equal(["fresh_task"]))
         expect(result.no_entrypoint).to(equal(["hand_only_task"]))
-        expect(result.exit_code).to(equal(0))
+        expect(result.exit_code).to(equal(1))
 
     def test_run_report_includes_success_without_output(self, real_pdp):
         real_pdp.create_task("task1")
@@ -639,8 +671,7 @@ class TestRunReport:
     def test_run_report_lists_tasks_run(self, import_and_clean_project):
         write_task_yml("import", entrypoint="touch output/data.csv")
         write_task_yml("clean", entrypoint="touch output/ran", depends_on=["import"])
-        
+
         result = import_and_clean_project.run_all()
-        
+
         expect(result.ran).to(equal(["import", "clean"]))
-        

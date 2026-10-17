@@ -21,6 +21,10 @@ When merging to main:
 
 ## [Unreleased]
 
+### Changed
+
+- A task with an entrypoint now fails the run. This may be revisited when subtasks are reintroduced.
+
 ## [0.2.0] - 2026-10-04
 
 ### Added

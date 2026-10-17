@@ -14,7 +14,7 @@ from .utils import TASK_NAME_RULE, find_project_root, is_valid_task_name
 class RunReport:
     """Results of running each task in scope, if not cleanly exited.
 
-    Failed and skipped (upstream failed) set exit code.
+    Failed, skipped, and no entrypoint determine exit code.
     """
 
     # Independent lists per result category
@@ -27,7 +27,7 @@ class RunReport:
 
     @property
     def exit_code(self) -> int:
-        return 1 if self.failed or self.skipped else 0
+        return 1 if self.failed or self.skipped or self.no_entrypoint else 0
 
 
 class PDP:
@@ -152,9 +152,7 @@ class PDP:
     ) -> RunReport:
         graph = {tid: task.depends_on for tid, task in flattened.items()}
         order = [
-            tid
-            for tid in TopologicalSorter(graph).static_order()
-            if tid in task_ids
+            tid for tid in TopologicalSorter(graph).static_order() if tid in task_ids
         ]
 
         all_task_ids = set(flattened)
@@ -164,7 +162,10 @@ class PDP:
         for tid in order:
             task = flattened[tid]
             if any(
-                dep in report.failed or dep in report.skipped for dep in task.depends_on
+                dep in report.failed
+                or dep in report.skipped
+                or dep in report.no_entrypoint
+                for dep in task.depends_on
             ):
                 report.skipped.append(tid)
                 continue

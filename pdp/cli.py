@@ -151,14 +151,14 @@ def run(
         console.print(f"Ran: {', '.join(report.ran)}")
     if report.current:
         console.print(f"Current: {', '.join(report.current)}")
-    if report.no_entrypoint:
-        console.print(f"No entrypoint, not run: {', '.join(report.no_entrypoint)}")
     if report.no_output:
         err_console.print(
             f"Ran but wrote nothing to output/: {', '.join(report.no_output)}"
         )
     if report.failed:
         err_console.print(f"Failed: {', '.join(report.failed)}")
+    if report.no_entrypoint:
+        err_console.print(f"No entrypoint (failed): {', '.join(report.no_entrypoint)}")
     if report.skipped:
         err_console.print(f"Skipped (upstream failed): {', '.join(report.skipped)}")
 

@@ -182,8 +182,9 @@ def test_run_prints_current_and_entrypointless_tasks(real_pdp):
 
     result = CliRunner(mix_stderr=False).invoke(app, ["run"])
 
+    expect(result.exit_code).to(equal(1))
     expect(result.stdout).to(contain("Current: fresh"))
-    expect(result.stdout).to(contain("No entrypoint, not run: hand"))
+    expect(result.stderr).to(contain("No entrypoint (failed): hand"))
 
 
 def test_running_unknown_task_throws_error(runner, fs):
