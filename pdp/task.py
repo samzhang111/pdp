@@ -49,7 +49,7 @@ class Task:
 
         Args:
             task_ids: Set of task ids as strings
-        """        
+        """
         root = find_project_root(config_name="pdp.yml", start=self.task_directory)
         for entry in self.input_folder.iterdir():
             if (
@@ -73,14 +73,13 @@ class Task:
         # Create env path to dependency outputs in case symlink fails (Windows, Slurm)
         root = find_project_root(config_name="pdp.yml", start=self.task_directory)
         env = os.environ | {
-            input_env_var(dep): str(root / dep / "output")
-            for dep in self.depends_on
+            input_env_var(dep): str(root / dep / "output") for dep in self.depends_on
         }
 
         # Snapshot to be able to revert changes
         before = self._output_snapshot()
 
-        # Pass env along with subprocess. 
+        # Pass env along with subprocess.
         result = subprocess.run(
             self.entrypoint, check=False, cwd=self.task_directory, shell=True, env=env
         )
@@ -101,7 +100,7 @@ class Task:
 
         Returns:
             snapshot: Dictionary with paths as keys and mtime_ns and size as values
-        """        
+        """
         snapshot = {}
         for root, _, files in os.walk(self.output_folder):
             for file in files:

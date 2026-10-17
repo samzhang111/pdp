@@ -43,5 +43,12 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-root = ""
 
+[tool.pytest.ini_options]
+# Test warnings from PipesSubprocessClient.run
+filterwarnings = [
+    "ignore::DeprecationWarning:dagster._core.pipes.context",
+    "ignore::dagster.PreviewWarning:dagster._core.pipes.context",
+]
+
 [tool.uv.sources]
 pdp = { workspace = true }

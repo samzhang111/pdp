@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug tests",
+      "type": "debugpy",
+      "request": "launch",
+      "purpose": ["debug-test"],
+      "env": { "PYTHONBREAKPOINT": "debugpy.breakpoint" },
+      "justMyCode": true
+    }
+  ]
+}
