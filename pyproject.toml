@@ -17,13 +17,22 @@ dependencies = [
 [project.scripts]
 pdp = "pdp.cli:app"
 
+[project.optional-dependencies]
+dagster = [
+    "dagster>=1.13,<1.14",
+]
+dagster-webserver = [
+    "dagster-webserver>=1.13,<1.14",
+]
+
 [dependency-groups]
 dev = [
     "pytest (>=8.3.5,<9.0.0)",
     "pytest-cov (>=7.1.0,<8.0.0)",
     "pyfakefs (>=5.8.0,<6.0.0)",
     "expects (>=0.9.0,<0.10.0)",
-    "ipython (>=9.1.0,<10.0.0)"
+    "ipython (>=9.1.0,<10.0.0)",
+    "pdp[dagster]",
 ]
 
 [build-system]
@@ -33,3 +42,6 @@ build-backend = "uv_build"
 # The package lives at the project root (pdp/), not under src/.
 [tool.uv.build-backend]
 module-root = ""
+
+[tool.uv.sources]
+pdp = { workspace = true }
