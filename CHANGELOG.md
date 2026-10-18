@@ -21,6 +21,8 @@ When merging to main:
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-18
+
 ### Added
 
 - `pdp dagster dev` starts local Dagster UI. Dagster assets are created from PDP

@@ -1,6 +1,6 @@
 [project]
 name = "pdp"
-version = "0.2.0"
+version = "0.2.1"
 description = "Principled Data Processing made easy"
 authors = [
     {name = "Sam Z",email = "shimian.zhang@gmail.com"}
