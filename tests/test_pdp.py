@@ -159,6 +159,17 @@ class TestScaffoldTask:
         )
         expect([child.children for child in tree.children]).to(equal([[], []]))
 
+    def test_pdp_task_tree_shows_dependencies(self, pdp):
+        pdp.create_task("hello")
+        world = pdp.create_task("world")
+        world.task_config.update_config_key("depends_on", ["hello"])
+
+        tree = pdp.task_tree()
+
+        expect([child.label for child in tree.children]).to(
+            equal(["2. hello", "3. world [dim] <- hello[/dim]"])
+        )
+
     def test_pdp_create_task_from_current_location_raises_if_not_in_task(self, fs):
         pdp = PDP()
         pdp.initialize()

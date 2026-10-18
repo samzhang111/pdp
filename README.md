@@ -71,7 +71,9 @@ Optional
 
 ### Dagster
 
-- Run `pdp dagster dev` to start
+- Run `pdp dagster dev` to start Dagster UI. From there, you can materialize assets.
+- Tasks from PDP are automatically generated as Dagster assets. Observations are used to record events so that changes to outputs outside of Dagster are properly recognized.
+- Dagster implementation is a work-in-progress. Currently no other Dagster CLI commands pass through.
 
 ### Additional commands
 
@@ -90,7 +92,7 @@ uv sync
 
 Install as an editable tool with Dagster for development:
 
-```
+```sh
 uv tool install --force --editable "[dagster]"
 ```
 

@@ -206,10 +206,13 @@ class PDP:
         return self.flatten_tasks().get(task_id)
 
     def task_tree(self) -> Tree:
-        """Flat numbered list of tasks under the project name."""
+        """Flat numbered list of tasks under the project name, with dependencies."""
         tree = Tree(f"1. {self.project_name}")
         for num, task in enumerate(self.tasks, start=2):
-            tree.add(f"{num}. {task.task_id}")
+            label = f"{num}. {task.task_id}"
+            if task.depends_on:
+                label += f" [dim] <- {', '.join(task.depends_on)}[/dim]"
+            tree.add(label)
         return tree
 
     def flatten_tasks(self) -> dict[str, Task]:

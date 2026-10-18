@@ -15,7 +15,7 @@ from pdp.pdp_errors import InvalidConfigError
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode="rich")
 
-dagster_app = typer.Typer(no_args_is_help=True, help="Run pdp with Dagster")
+dagster_app = typer.Typer(no_args_is_help=True, help="Run PDP with Dagster.")
 app.add_typer(dagster_app, name="dagster")
 app.add_typer(dagster_app, name="dg", hidden=True) # dg commands also work
 
@@ -70,6 +70,8 @@ def init(
 ) -> None:
     """
     Initialize the project.
+    
+    Sets a project name, then creates tasks for every task listed in pdp.yml, if it exists.
     """
 
     pdp = PDP(project_name)
@@ -79,7 +81,9 @@ def init(
 @app.command()
 def scaffold():
     """
-    Scaffold the project. That is, for each task, create input and output folders if they don't already exist.
+    Scaffold the project. 
+    
+    For each task, create input and output folders if they don't already exist.
     """
 
     pdp = load_pdp()
@@ -107,8 +111,13 @@ def create(task_names: list[str]) -> None:
 
 @app.command()
 def validate():
-    """
-    Validate the pdp yml.
+    """Validate the pdp yml.
+
+    Checks that: 
+    - Each task has an input/, output/, and src/ folder
+    - Each task has a valid `task.yml`
+    - Any `depends_on` references a valid task
+    - There are no dependency cyles in the project
     """
 
     pdp = load_pdp()
@@ -176,9 +185,7 @@ def run(
 
 @app.command()
 def tree() -> None:
-    """
-    Print the task tree.
-    """
+    """Print the task tree as flat list with dependencies."""
 
     pdp = load_pdp()
     tree = pdp.task_tree()

@@ -235,12 +235,12 @@ class TestReconcile:
     def test_stale_and_entrypointless_tasks_get_nothing(self, real_pdp, instance):
         real_pdp.create_task("stale")
         write_task_yml("stale", entrypoint="touch output/ran")
-        real_pdp.create_task("no entrypoint")
+        real_pdp.create_task("entrypointless")
 
         reconcile(real_pdp, instance)
 
         expect(self.observations(instance, "stale")).to(have_len(0))
-        expect(self.observations(instance, "no entrypoint")).to(have_len(0))
+        expect(self.observations(instance, "entrypointless")).to(have_len(0))
 
     def test_current_task_does_not_write_a_materialization(self, real_pdp, instance):
         make_current(real_pdp, "task1")
