@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import ANY, call, patch
 
@@ -22,6 +23,13 @@ def runner(fs):
 
 def read_config_file(filename):
     return dict(YAML().load(Path(filename)))
+
+
+def run_dagster_dev(returncode=0):
+    with patch("subprocess.Popen") as popen:
+        popen.return_value.wait.return_value = returncode
+        result = CliRunner(mix_stderr=False).invoke(app, ["dagster", "dev"])
+    return result, popen
 
 
 def test_init_creates_pdp_yaml(runner, fs):
@@ -224,3 +232,43 @@ def test_run_prints_tasks_that_ran(import_and_clean_project):
     result = CliRunner(mix_stderr=False).invoke(app, ["run"])
 
     expect(result.stdout).to(contain("Ran: import, clean"))
+
+
+class TestDagsterCli:
+    def test_pdp_dagster_dev_calls_module(self, real_pdp):
+        result, popen = run_dagster_dev()
+        root = real_pdp.project_root
+
+        popen.assert_called_once_with(
+            [sys.executable, "-m", "dagster", "dev", "-m", "pdp.dagster_defs"],
+            cwd=root,
+            env=ANY,
+        )
+
+        env = popen.call_args.kwargs["env"]
+        expect(env["PDP_PROJECT_ROOT"]).to(equal(str(root)))
+        expect(env["DAGSTER_HOME"]).to(equal(str(root / ".dagster")))
+        expect((root / ".dagster").is_dir()).to(be_true)
+        expect(result.exit_code).to(equal(0))
+
+    def test_dagster_dev_honors_existing_dagster_home(self, real_pdp, monkeypatch):
+        monkeypatch.setenv("DAGSTER_HOME", "/elsewhere")
+        _, popen = run_dagster_dev()
+
+        expect(popen.call_args.kwargs["env"]["DAGSTER_HOME"]).to(equal("/elsewhere"))
+
+    def test_dagster_dev_fails_when_run_outside_project(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result, popen = run_dagster_dev()
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(contain("No project detected"))
+        popen.assert_not_called()
+
+    def test_dagster_dev_throws_error_when_dagster_missing(self, real_pdp):
+        with patch("importlib.util.find_spec", return_value=None):
+            result, popen = run_dagster_dev()
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(contain("Dagster must be installed: `pdp[dagster]`"))
+        popen.assert_not_called()

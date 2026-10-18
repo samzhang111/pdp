@@ -28,14 +28,29 @@ This tool is designed both to be opinionated (see [Principles](#principles) belo
 
 ## Install
 
-Soon to be available on PyPI. Meanwhile, clone the repository, and run `uv sync`.
+Soon to be available on PyPI. Meanwhile, clone and install with [uv tool](https://docs.astral.sh/uv/concepts/tools/):
+
+```sh
+# install uv if needed:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# clone and install pdp
+git clone https://github.com/samzhang111/pdp.git
+uv tool install ./pdp
+
+# install pdp with dagster (optional):
+uv tool install "./pdp[dagster]"
+```
 
 **Requirements:**
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
 
-Run the tests with `uv run pytest`, and the CLI with `uv run pdp`.
+Optional
+
+- dagster>=1.13,<1.14
+- dagster-webserver>=1.13,<1.14
 
 ## Usage
 
@@ -54,6 +69,10 @@ Run the tests with `uv run pytest`, and the CLI with `uv run pdp`.
 - Edit each `task.yml` to designate a specific command to run as an entrypoint, such as `make`.
 - Run `pdp run` from within a task to run that task. If in the project root, this runs all tasks.
 
+### Dagster
+
+- Run `pdp dagster dev` to start
+
 ### Additional commands
 
 - Run `pdp tree` to see the tree structure of all tasks.
@@ -61,7 +80,25 @@ Run the tests with `uv run pytest`, and the CLI with `uv run pdp`.
 
 ## Contributing
 
-Code should be formatted and linted with [Ruff](https://github.com/astral-sh/ruff). Use [Google style docstrings](https://google.github.io/styleguide/pyguide.html#docstrings).
+Install `uv`, clone repository and sync dependencies:
+
+```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
+git clone https://github.com/samzhang111/pdp.git
+uv sync
+```
+
+Install as an editable tool with Dagster for development:
+
+```
+uv tool install --force --editable "[dagster]"
+```
+
+Guidelines
+
+- Run tests with `uv run pytest`.
+- Code should be formatted and linted with [Ruff](https://github.com/astral-sh/ruff). 
+- Use [Google style docstrings](https://google.github.io/styleguide/pyguide.html#docstrings).
 
 ## About
 

@@ -95,13 +95,8 @@ class TestStaleness:
     def test_latest_mtime_in_dir_returns_newest_mtime(self, task, fs):
         task.scaffold()
 
-        older_file = task.output_folder / "old.txt"
-        older_file.touch()
-        os.utime(older_file, (1000, 1000))
-
-        newer_file = task.output_folder / "new.txt"
-        newer_file.touch()
-        os.utime(newer_file, (2000, 2000))
+        touch(task.output_folder / "old.txt", 1000)
+        touch(task.output_folder / "new.txt", 2000)
 
         expect(latest_mtime_in_dir(task.output_folder)).to(equal(2000))
 
@@ -111,13 +106,8 @@ class TestStaleness:
         nested_dir = task.output_folder / "nested"
         nested_dir.mkdir()
 
-        top_file = task.output_folder / "top.txt"
-        top_file.touch()
-        os.utime(top_file, (1000, 1000))
-
-        nested_file = nested_dir / "deep.txt"
-        nested_file.touch()
-        os.utime(nested_file, (5000, 5000))
+        touch(task.output_folder / "top.txt", 1000)
+        touch(nested_dir / "deep.txt", 5000)
 
         expect(latest_mtime_in_dir(task.output_folder)).to(equal(5000))
 

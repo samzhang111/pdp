@@ -8,6 +8,8 @@ import dagster as dg
 from .pdp import PDP
 from .task import Task, latest_mtime_in_dir
 
+DATA_VERSION_TAG = "dagster/data_version"
+
 
 class PdpResource(dg.ConfigurableResource):
     """Hold config for the Dagster run.
@@ -30,7 +32,7 @@ def output_data_version(task: Task) -> dg.DataVersion:
 def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
     """Build a Dagster asset from a single pdp Task
 
-    Use multi_asset for each Task as workaround for naming conventions. 
+    Use multi_asset for each Task as workaround for naming conventions.
     Instead of returning `get_materialize_result()`, we create our own
     `dg.MaterializeResult()` so we can add output snapshot.
 
@@ -99,6 +101,62 @@ def build_assets(pdp: PDP) -> list[dg.AssetsDefinition]:
     return [build_asset(task, project_root) for task in pdp.flatten_tasks().values()]
 
 
+def load_project(project_root: Path) -> PDP:
+    """Load and validate the pdp project at project_root
+
+    Args:
+        project_root: Root of project as found by `pdp.find_project_root`
+
+    Returns:
+        Initialized PDP object
+    """
+    os.chdir(project_root)
+    pdp = PDP()
+    pdp.initialize()
+    pdp._validate_or_raise()
+
+    return pdp
+
+
+def reconcile(pdp: PDP, instance: dg.DagsterInstance) -> None:
+    """Record dg observations for current tasks whose output changed outside
+    of Dagster process.
+
+    Runs every time definitions are loaded. Tasks which are stale or
+    entrypoints are skipped.
+
+    Args:
+        pdp: Valid PDP object with one or more tasks
+        instance: Dagster instance
+    """
+    for task_id, task in pdp.flatten_tasks().items():
+        if not task.entrypoint or task.is_stale:
+            continue
+
+        key = dg.AssetKey(task_id)
+        data_version = output_data_version(task).value
+
+        # Find most recent event Dagster recorded for asset
+        latest = max(
+            [
+                *instance.fetch_observations(key, limit=1).records,
+                *instance.fetch_materializations(key, limit=1).records,
+            ],
+            key=lambda record: record.storage_id,
+            default=None,
+        )
+        event = latest and (latest.asset_observation or latest.asset_materialization)
+
+        # If the data version tag of event matches what Dagster has, it already knows about it
+        if event and (event.tags or {}).get(DATA_VERSION_TAG) == data_version:
+            continue
+
+        # Otherwise, new observation with current version
+        instance.report_runless_asset_event(
+            dg.AssetObservation(key, tags={DATA_VERSION_TAG: data_version})
+        )
+
+
 def build_definitions(project_root: Path) -> dg.Definitions:
     """Pass list of Dagster asset definitions
 
@@ -108,14 +166,7 @@ def build_definitions(project_root: Path) -> dg.Definitions:
     Returns:
         Dagster definitions
     """
-    # shortcut: PDP has no root parameter, pass one through if the defs module
-    # ever loads more than one project
-    os.chdir(project_root)
-    pdp = PDP()
-    pdp.initialize()
-    pdp._validate_or_raise()
-
     return dg.Definitions(
-        assets=build_assets(pdp),
+        assets=build_assets(load_project(project_root)),
         resources={"pdp": PdpResource(), "pipes": dg.PipesSubprocessClient()},
     )

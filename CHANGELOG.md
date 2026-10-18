@@ -21,9 +21,19 @@ When merging to main:
 
 ## [Unreleased]
 
+### Added
+
+- `pdp dagster dev` starts local Dagster UI. Dagster assets are created from PDP
+  tasks.
+- Optional dependencies for dagster and dagster-webserver
+- When Dagster loads, tasks with outputs that changed outside of Dagster are
+  recorded as asset observations so staleness carries through and only necessary
+  tasks are run.
+
 ### Changed
 
-- A task with an entrypoint now fails the run. This may be revisited when subtasks are reintroduced.
+- A task without an entrypoint now fails the run. This may be revisited when
+  subtasks are reintroduced.
 
 ## [0.2.0] - 2026-10-04
 

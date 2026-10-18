@@ -20,8 +20,6 @@ pdp = "pdp.cli:app"
 [project.optional-dependencies]
 dagster = [
     "dagster>=1.13,<1.14",
-]
-dagster-webserver = [
     "dagster-webserver>=1.13,<1.14",
 ]
 

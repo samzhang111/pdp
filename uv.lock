@@ -1215,8 +1215,6 @@ dependencies = [
 [package.optional-dependencies]
 dagster = [
     { name = "dagster" },
-]
-dagster-webserver = [
     { name = "dagster-webserver" },
 ]
 
@@ -1233,12 +1231,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dagster", marker = "extra == 'dagster'", specifier = ">=1.13,<1.14" },
-    { name = "dagster-webserver", marker = "extra == 'dagster-webserver'", specifier = ">=1.13,<1.14" },
+    { name = "dagster-webserver", marker = "extra == 'dagster'", specifier = ">=1.13,<1.14" },
     { name = "rich", specifier = ">=14.0.0,<15.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.10,<0.19.0" },
     { name = "typer", specifier = ">=0.15.2,<0.16.0" },
 ]
-provides-extras = ["dagster", "dagster-webserver"]
+provides-extras = ["dagster"]
 
 [package.metadata.requires-dev]
 dev = [
