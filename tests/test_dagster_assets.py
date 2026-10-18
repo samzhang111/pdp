@@ -70,6 +70,15 @@ class TestAssetProperties:
             )
         )
 
+    def test_asset_describes_entrypoint_and_kind(self, real_pdp):
+        real_pdp.create_task("task1")
+        write_task_yml("task1", entrypoint="make")
+
+        spec = next(iter(build_assets(real_pdp)[0].specs))
+
+        expect(spec.description).to(equal("`make`"))
+        expect(spec.kinds).to(equal({"pdp"}))
+
 
 class TestAssetRuns:
     def test_stale_tasks_run_in_order(self, import_and_clean_project):
@@ -131,6 +140,17 @@ class TestAssetRuns:
         expect(result.success).to(be_true)
         mats = materializations(result)
         expect(mats["task1"].metadata["pdp/no_output"].value).to(be_true)
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_materialization_records_output_stats(self, real_pdp, force):
+        task = make_current(real_pdp, "task1")
+
+        metadata = materializations(materialize(real_pdp, force=force))["task1"].metadata
+
+        files = 2 if force else 1  # force also writes output/ran
+        expect(metadata["pdp/files"].value).to(equal(files))
+        expect(metadata["pdp/bytes"].value).to(equal(len("done")))
+        expect(metadata["pdp/output"].value).to(equal(str(task.output_folder)))
 
 
 class TestAssetFailures:
@@ -235,12 +255,12 @@ class TestReconcile:
     def test_stale_and_entrypointless_tasks_get_nothing(self, real_pdp, instance):
         real_pdp.create_task("stale")
         write_task_yml("stale", entrypoint="touch output/ran")
-        real_pdp.create_task("no entrypoint")
+        real_pdp.create_task("entrypointless")
 
         reconcile(real_pdp, instance)
 
         expect(self.observations(instance, "stale")).to(have_len(0))
-        expect(self.observations(instance, "no entrypoint")).to(have_len(0))
+        expect(self.observations(instance, "entrypointless")).to(have_len(0))
 
     def test_current_task_does_not_write_a_materialization(self, real_pdp, instance):
         make_current(real_pdp, "task1")

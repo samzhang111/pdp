@@ -25,10 +25,10 @@ def read_config_file(filename):
     return dict(YAML().load(Path(filename)))
 
 
-def run_dagster_dev(returncode=0):
+def run_dagster_dev(returncode=0, args=("dev",)):
     with patch("subprocess.Popen") as popen:
         popen.return_value.wait.return_value = returncode
-        result = CliRunner(mix_stderr=False).invoke(app, ["dagster", "dev"])
+        result = CliRunner(mix_stderr=False).invoke(app, ["dagster", *args])
     return result, popen
 
 
@@ -250,6 +250,46 @@ class TestDagsterCli:
         expect(env["DAGSTER_HOME"]).to(equal(str(root / ".dagster")))
         expect((root / ".dagster").is_dir()).to(be_true)
         expect(result.exit_code).to(equal(0))
+
+    def test_dagster_passes_through_with_project_module(self, real_pdp):
+        _, popen = run_dagster_dev(args=["asset", "materialize", "--select", "clean+"])
+
+        expect(popen.call_args.args[0][2:]).to(
+            equal(
+                [
+                    "dagster",
+                    "asset",
+                    "materialize",
+                    "-m",
+                    "pdp.dagster_defs",
+                    "--select",
+                    "clean+",
+                ]
+            )
+        )
+
+    @pytest.mark.parametrize(
+        "location", [["-f", "defs.py"], ["--module-name=other"], ["-w", "ws.yaml"]]
+    )
+    def test_dagster_keeps_user_code_location(self, real_pdp, location):
+        _, popen = run_dagster_dev(args=["dev", *location])
+
+        expect(popen.call_args.args[0][2:]).to(equal(["dagster", "dev", *location]))
+
+    def test_default_dagster_home_disables_telemetry(self, real_pdp):
+        run_dagster_dev()
+
+        config = read_config_file(real_pdp.project_root / ".dagster" / "dagster.yaml")
+        expect(config).to(equal({"telemetry": {"enabled": False}}))
+
+    def test_existing_dagster_yaml_is_kept(self, real_pdp):
+        home = real_pdp.project_root / ".dagster"
+        home.mkdir()
+        (home / "dagster.yaml").write_text("telemetry:\n  enabled: true\n")
+
+        run_dagster_dev()
+
+        expect((home / "dagster.yaml").read_text()).to(contain("enabled: true"))
 
     def test_dagster_dev_honors_existing_dagster_home(self, real_pdp, monkeypatch):
         monkeypatch.setenv("DAGSTER_HOME", "/elsewhere")

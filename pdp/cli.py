@@ -1,7 +1,4 @@
 import importlib.util
-import os
-import subprocess
-import sys
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Annotated
@@ -10,14 +7,11 @@ import typer
 from rich import print as rprint
 from rich.console import Console
 
+from pdp.dagster_cli import run_dagster
 from pdp.pdp import PDP, RunReport
 from pdp.pdp_errors import InvalidConfigError
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode="rich")
-
-dagster_app = typer.Typer(no_args_is_help=True, help="Run pdp with Dagster")
-app.add_typer(dagster_app, name="dagster")
-app.add_typer(dagster_app, name="dg", hidden=True) # dg commands also work
 
 err_console = Console(stderr=True)
 console = Console()
@@ -107,8 +101,13 @@ def create(task_names: list[str]) -> None:
 
 @app.command()
 def validate():
-    """
-    Validate the pdp yml.
+    """Validate the pdp yml.
+
+    Checks that:
+    - `pdp.yml` exists and has valid fields
+    - Each task has an input folder, output folder, src folder, and task.yml
+    - Any `depends_on` references real tasks
+    - There are no dependency cycles among tasks
     """
 
     pdp = load_pdp()
@@ -187,38 +186,27 @@ def tree() -> None:
     raise typer.Exit(0)
 
 
-@dagster_app.command("dev")
-def dev() -> None:
-    """Launch the Dagster UI
-    
-    PDP tasks are automatically converted to Dagster assets along with the DAG. You can find the UI at: [link=http://127.0.0.1:3000]http://127.0.0.1:3000[/link]
-
-    This is an optional feature. Make sure you have pdp\\[dagster] installed to use it.
-    """
+@app.command(
+    "dagster",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+    add_help_option=False,
+)
+def dagster(ctx: typer.Context) -> None:
+    """Run any Dagster command on this project. Use `pdp dagster dev` to create a Dagster UI at localhost:3000. Dagster help docs can be found by using `pdp dagster --help`."""
 
     pdp = load_pdp()
-    root = pdp.project_root
 
     if importlib.util.find_spec("dagster") is None:
         err_console.print("Dagster must be installed: `pdp\\[dagster]`.")
         raise typer.Exit(1)
 
-    env = os.environ | {"PDP_PROJECT_ROOT": str(root)}
-    if "DAGSTER_HOME" not in env:
-        env["DAGSTER_HOME"] = str(root / ".dagster")
-        Path(env["DAGSTER_HOME"]).mkdir(exist_ok=True)
+    raise typer.Exit(run_dagster(pdp.project_root, ctx.args))
 
-    # Popen over run to avoid orphan daemon
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "dagster", "dev", "-m", "pdp.dagster_defs"],
-        cwd=root,
-        env=env,
-    )
 
-    try:
-        returncode = proc.wait()
-    except KeyboardInterrupt:
-        # dagster dev got the same Ctrl-C; let it shut down its webserver and daemon
-        returncode = proc.wait()
-
-    raise typer.Exit(returncode)
+# dg alias for dagster
+app.command(
+    "dg",
+    hidden=True,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+    add_help_option=False,
+)(dagster)

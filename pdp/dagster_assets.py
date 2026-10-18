@@ -20,13 +20,29 @@ class PdpResource(dg.ConfigurableResource):
     force: bool = False
 
 
-def output_data_version(task: Task) -> dg.DataVersion:
+def output_data_version(task: Task, snapshot: dict | None = None) -> dg.DataVersion:
     """Pass output snapshot from Task to Dagster as DataVersion"""
-    snapshot = sorted(
+    if snapshot is None:
+        snapshot = task._output_snapshot()
+    entries = sorted(
         (os.path.relpath(path, task.output_folder), stat)
-        for path, stat in task._output_snapshot().items()
+        for path, stat in snapshot.items()
     )
-    return dg.DataVersion(hashlib.sha256(repr(snapshot).encode()).hexdigest())
+    return dg.DataVersion(hashlib.sha256(repr(entries).encode()).hexdigest())
+
+
+def output_result(task: Task, metadata: dict) -> dg.MaterializeResult:
+    """MaterializeResult with output/ stats and data version"""
+    snapshot = task._output_snapshot()
+    return dg.MaterializeResult(
+        metadata={
+            **metadata,
+            "pdp/files": len(snapshot),
+            "pdp/bytes": sum(size for _, size in snapshot.values()),
+            "pdp/output": dg.MetadataValue.path(str(task.output_folder)),
+        },
+        data_version=output_data_version(task, snapshot),
+    )
 
 
 def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
@@ -49,7 +65,13 @@ def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
     # workaround to avoid 'import', which is not allowed
     @dg.multi_asset(
         name=f"task_{task_id.replace('-', '__')}",
-        outs={"out": dg.AssetOut(key=dg.AssetKey(task_id))},
+        outs={
+            "out": dg.AssetOut(
+                key=dg.AssetKey(task_id),
+                description=f"`{task.entrypoint}`" if task.entrypoint else None,
+                kinds={"pdp"},
+            )
+        },
         ins={
             f"dep_{i}": dg.AssetIn(key=dg.AssetKey(dep), dagster_type=dg.Nothing)
             for i, dep in enumerate(task.depends_on)
@@ -65,9 +87,7 @@ def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
 
         # Either task records an output, or fails and Dagster skips its dependents
         if not (pdp.force or task.is_stale):
-            return dg.MaterializeResult(
-                metadata={"pdp/ran": False}, data_version=output_data_version(task)
-            )
+            return output_result(task, {"pdp/ran": False})
 
         # Run python -m pdp.pipes_wrapper <task_id> as subprocess through pipes
         pipes.run(
@@ -80,10 +100,7 @@ def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
         if no_output:
             context.log.warning(f"{task_id} ran but created nothing in output/ folder")
 
-        return dg.MaterializeResult(
-            metadata={"pdp/ran": True, "pdp/no_output": no_output},
-            data_version=output_data_version(task),
-        )
+        return output_result(task, {"pdp/ran": True, "pdp/no_output": no_output})
 
     return _asset
 

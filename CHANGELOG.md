@@ -29,6 +29,9 @@ When merging to main:
 - When Dagster loads, tasks with outputs that changed outside of Dagster are
   recorded as asset observations so staleness carries through and only necessary
   tasks are run.
+- `pdp dagster <command>` passes any `dagster` command through with the project
+  loaded, e.g. `pdp dagster asset materialize --select clean+`.
+- If `.dagster/` has no `dagster.yaml`, pdp writes one with telemetry disabled.
 
 ### Changed
 

@@ -71,7 +71,23 @@ Optional
 
 ### Dagster
 
-- Run `pdp dagster dev` to start
+- Run `pdp dagster dev` to start the UI at http://127.0.0.1:3000.
+- Any other `dagster` command works on the project too:
+
+  ```sh
+  # Inspect
+  pdp dagster asset list
+  pdp dagster definitions validate
+  pdp dagster run list # run history
+  pdp dagster instance info # Dagster state
+
+  # Run
+  pdp dagster asset materialize --select '*' # all tasks
+  pdp dagster asset materialize --select +task # task and dependencies
+  pdp dagster asset materialize --select task+ # task and dependents
+  ```
+
+Unlike `pdp run`, Dagster runs independent tasks in parallel
 
 ### Additional commands
 
