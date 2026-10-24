@@ -21,6 +21,16 @@ When merging to main:
 
 ## [Unreleased]
 
+### Added
+
+- `pdp dagster dev --slurm` runs each task as Slurm job. Can run concurrently
+  when PDP structure allows for it. Configure with `slurm` block in `pdp.yml` or
+  `task.yml`. Tasks override project configuration.
+- `pdp dagster dev -p/--port` sets the UI port.
+- Remote: `pdp remote start`, `pdp remote push`, `pdp remote pull` and
+  `pdp remote stop` sync a local project to a cluster over SSH, run Dagster
+  there in tmux, and bring outputs back.
+
 ## [0.2.1] - 2026-10-18
 
 ### Added

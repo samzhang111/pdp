@@ -6,9 +6,11 @@
   <b>A command-line tool for reproducible data analysis workflows.</b>
 </p>
 
-Principled Data Processing is a reproducible and readable way to organize data analyses.
-`pdp` is a command-line tool that makes using Principled Data Processing very simple.
-This tool is designed both to be opinionated (see [Principles](#principles) below), as well as easy to bolt onto existing PDP projects (see [Usage](#usage)).
+Principled Data Processing is a reproducible and readable way to organize data
+analyses. `pdp` is a command-line tool that makes using Principled Data
+Processing very simple. This tool is designed both to be opinionated (see
+[Principles](#principles) below), as well as easy to bolt onto existing PDP
+projects (see [Usage](#usage)).
 
 ##### Table of contents
 
@@ -20,15 +22,24 @@ This tool is designed both to be opinionated (see [Principles](#principles) belo
 
 ## Principles
 
-1. Projects are separated into _tasks_, which are folders in the filesystem. A task is either a collection of subtasks, which are themselves subdirectories in the task, or an _atomic_ task which contains no further subtasks. **NOTE:** subtask functionality is delayed - project only currently works with single level tasks.
+1. Projects are separated into _tasks_, which are folders in the filesystem. A
+   task is either a collection of subtasks, which are themselves subdirectories
+   in the task, or an _atomic_ task which contains no further subtasks.
+   **NOTE:** subtask functionality is delayed - project only currently works
+   with single level tasks.
 
-2. Atomic tasks contain folders for `input` (input data for the task), `src` (source code), and `output` (where the task writes its outputs). Importantly, tasks only write to their output folders, and never read from their own outputs.
+2. Atomic tasks contain folders for `input` (input data for the task), `src`
+   (source code), and `output` (where the task writes its outputs). Importantly,
+   tasks only write to their output folders, and never read from their own
+   outputs.
 
-3. Tasks have an entrypoint that allows them to be run with a single command. Usually this is `make`.
+3. Tasks have an entrypoint that allows them to be run with a single command.
+   Usually this is `make`.
 
 ## Install
 
-Soon to be available on PyPI. Meanwhile, clone and install with [uv tool](https://docs.astral.sh/uv/concepts/tools/):
+Soon to be available on PyPI. Meanwhile, clone and install with
+[uv tool](https://docs.astral.sh/uv/concepts/tools/):
 
 ```sh
 # install uv if needed:
@@ -56,24 +67,126 @@ Optional
 
 ### Editing an existing PDP project
 
-- Run `pdp init` from the root of a project. It creates a file called `pdp.yml`, which contains metadata about the project, and marks the project root.
+- Run `pdp init` from the root of a project. It creates a file called `pdp.yml`,
+  which contains metadata about the project, and marks the project root.
 - Edit the `tasks` key in the `pdp.yml` file to list all the tasks in order.
-- Run `pdp init` again, to initialize the `task.yml` files within each of those tasks.
-- Edit each `task.yml` to designate the entrypoint, which would be `make` for most PDP projects.
-- Run `pdp run` from within a task to run that task. If in the project root, this runs all tasks.
+- Run `pdp init` again, to initialize the `task.yml` files within each of those
+  tasks.
+- Edit each `task.yml` to designate the entrypoint, which would be `make` for
+  most PDP projects.
+- Run `pdp run` from within a task to run that task. If in the project root,
+  this runs all tasks.
 
 ### Starting a new project from scratch
 
-- Run `pdp init` from the root of a project. It creates a file called `pdp.yml`, which contains metadata about the project, and marks the project root.
-- Run `pdp create <name_of_task1> <name_of_task2> ... <name_of_taskN>` to create tasks. This creates directories for each task, a `task.yml` configuration file, as well as the `src`, `input`, and `output` folders within that task. Task names may contain upper or lower cases letters, digits, and can be separated by one or more single underscores (`_`) or dashes (`-`).
-- Edit each `task.yml` to designate a specific command to run as an entrypoint, such as `make`.
-- Run `pdp run` from within a task to run that task. If in the project root, this runs all tasks.
+- Run `pdp init` from the root of a project. It creates a file called `pdp.yml`,
+  which contains metadata about the project, and marks the project root.
+- Run `pdp create <name_of_task1> <name_of_task2> ... <name_of_taskN>` to create
+  tasks. This creates directories for each task, a `task.yml` configuration
+  file, as well as the `src`, `input`, and `output` folders within that task.
+  Task names may contain upper or lower cases letters, digits, and can be
+  separated by one or more single underscores (`_`) or dashes (`-`).
+- Edit each `task.yml` to designate a specific command to run as an entrypoint,
+  such as `make`.
 
-### Dagster
+### Run locally
 
-- Run `pdp dagster dev` to start Dagster UI. From there, you can materialize assets.
-- Tasks from PDP are automatically generated as Dagster assets. Observations are used to record events so that changes to outputs outside of Dagster are properly recognized.
-- Dagster implementation is a work-in-progress. Currently no other Dagster CLI commands pass through.
+- Use `pdp run` from within a task to run that task. If in the project root,
+  this runs all tasks.
+- `pdp run` always runs in the local environment and does not require Dagster or
+  Slurm.
+
+### Run with Dagster
+
+- Run `pdp dagster dev` to start Dagster UI. From there, you can materialize
+  assets. No other Dagster CLI commands currently pass through.
+- Tasks from PDP are generated as Dagster assets. Observations are used to
+  record events so that changes to outputs outside of Dagster are properly
+  recognized.
+
+### Run with Dagster-Slurm
+
+- The VACC has `uv` and `tmux` installed by default. Both are required to be
+  able to run PDP on Slurm.
+- Put slurm flags in an optional `slurm:` block in the `pdp.yml`. You can also
+  set `task.yml` with settings that override the `pdp.yml` for that task.
+- Datasets on the VACC can be symlinked in your local project
+  (`ln -s /path/from/vacc task/input/data.csv`). Symlinks will sync with PDP to
+  be able to access those datasets during runtime.
+- Run `pdp dagster dev --slurm` to run the project with each task as a Slurm
+  job.
+
+```yaml
+# pdp.yml
+slurm:
+  partition: general
+  time: "01:00:00"
+
+# clean/task.yml
+slurm:
+  mem: 16G
+  exclusive: true
+```
+
+Jobs inherit the login node's environment (`--export=ALL`).
+
+#### From Local Machine (Recommended)
+
+Launch your project from your local machine and have PDP sync and run it from
+the cluster with Dagster-Slurm.
+
+First, put the cluster info in `.env` in your project root, and add `.env` to
+`.gitignore`:
+
+```sh
+PDP_REMOTE_HOST=vacc-login1
+PDP_REMOTE_PATH=/gpfs1/home/n/e/netid/my-project
+PDP_REMOTE_PORT=3000 # optional
+
+# optionally pdp dagster version - only needed in development to keep uv accurate
+PDP_REMOTE_SPEC=pdp[dagster] @ git+https://github.com/ChrisDonovan307/pdp@740a13e
+```
+
+Configure a `~/.ssh/config` which specifies a login node. This is required
+because PDP commands need to reach the same login node when syncing, pushing,
+and pulling.
+
+```
+Host vacc-login1
+    HostName vacc-login1
+    User <netid>
+    ProxyJump <netid>@login.vacc.uvm.edu
+```
+
+To run the project:
+
+- `pdp remote start` pushes the project to VACC, opens a tmux session called
+  `pdp-<project-name>`, runs `pdp dagster dev --slurm` and forwards the UI for
+  Dagster. Set the port with `-p` or `PDP_REMOTE_PORT`.
+  - Visit the localhost URL to materialize assets with Dagster.
+  - Closing your terminal only closes the tunnel - the tmux sesion will persist
+    on the cluster.
+  - Run `pdp remote start` again to reconnect to the session.
+- `pdp remote push` syncs the project to the cluster.
+- `pdp remote pull` pulls each task's `output/` from the cluster back to your
+  local machine. It refuses while jobs are still running, but can be interrupted
+  with `--force`.
+- `pdp remote stop` ends the tmux session and cancels PDP's remaining Slurm
+  jobs.
+
+#### From the Cluster
+
+Clone your repository into a directory project on the cluster. Then, on a login
+node:
+
+```sh
+tmux new -s pdp
+pdp dagster dev --slurm -p 3000   # 3000 is default
+```
+
+Forward the port from your local machine with
+`ssh -N -L 3000:localhost:3000 <node>` and open localhost:3000 to materialize
+assets in the UI.
 
 ### Additional commands
 
@@ -99,11 +212,16 @@ uv tool install --force --editable "[dagster]"
 Guidelines
 
 - Run tests with `uv run pytest`.
-- Code should be formatted and linted with [Ruff](https://github.com/astral-sh/ruff). 
-- Use [Google style docstrings](https://google.github.io/styleguide/pyguide.html#docstrings).
+- Code should be formatted and linted with
+  [Ruff](https://github.com/astral-sh/ruff).
+- Use
+  [Google style docstrings](https://google.github.io/styleguide/pyguide.html#docstrings).
 
 ## About
 
-This work was developed with the support of a [US Research Software Sustainability Institute](https://urssi.us/) early-career fellowship.
-Thanks to helpful discussions with Patrick Ball, Bailey Passmore, and Tarak Shah.
-Principled Data Processing was a framework developed by the [Human Rights Data Analysis Group](https://hrdag.org) in the early 2000s, to facilitate reproducibility in their forensic human rights work.
+This work was developed with the support of a
+[US Research Software Sustainability Institute](https://urssi.us/) early-career
+fellowship. Thanks to helpful discussions with Patrick Ball, Bailey Passmore,
+and Tarak Shah. Principled Data Processing was a framework developed by the
+[Human Rights Data Analysis Group](https://hrdag.org) in the early 2000s, to
+facilitate reproducibility in their forensic human rights work.

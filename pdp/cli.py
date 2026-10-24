@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Annotated
@@ -11,6 +12,7 @@ import typer
 from rich import print as rprint
 from rich.console import Console
 
+from pdp import remote
 from pdp.pdp import PDP, RunReport
 from pdp.pdp_errors import InvalidConfigError
 
@@ -19,6 +21,11 @@ app = typer.Typer(no_args_is_help=True, rich_markup_mode="rich")
 dagster_app = typer.Typer(no_args_is_help=True, help="Run PDP with Dagster.")
 app.add_typer(dagster_app, name="dagster")
 app.add_typer(dagster_app, name="dg", hidden=True)  # dg commands also work
+
+remote_app = typer.Typer(
+    no_args_is_help=True, help="Run the project on a Slurm cluster over SSH."
+)
+app.add_typer(remote_app, name="remote")
 
 err_console = Console(stderr=True)
 console = Console()
@@ -200,6 +207,9 @@ def dev(
     slurm: Annotated[
         bool, typer.Option("--slurm", help="Run each task as a Slurm job via srun.")
     ] = False,
+    port: Annotated[
+        int | None, typer.Option("--port", "-p", help="Port for the Dagster UI.")
+    ] = None,
 ) -> None:
     """Launch the Dagster UI
 
@@ -228,17 +238,110 @@ def dev(
             raise typer.Exit(1)
         env["PDP_SLURM"] = "1"
 
+    cmd = [sys.executable, "-m", "dagster", "dev", "-m", "pdp.dagster_defs"]
+    if port:
+        cmd += ["-p", str(port)]
+
     # Popen over run to avoid orphan daemon
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "dagster", "dev", "-m", "pdp.dagster_defs"],
-        cwd=root,
-        env=env,
-    )
+    proc = subprocess.Popen(cmd, cwd=root, env=env)
 
     try:
         returncode = proc.wait()
     except KeyboardInterrupt:
-        # dagster dev got the same Ctrl-C; let it shut down its webserver and daemon
+        # let dagster shut itself down
         returncode = proc.wait()
 
     raise typer.Exit(returncode)
+
+
+@contextmanager
+def _remote_errors():
+    try:
+        yield
+    except remote.RemoteError as e:
+        err_console.print(str(e), markup=False, soft_wrap=True)
+        raise typer.Exit(1)
+    except subprocess.CalledProcessError as e:
+        raise typer.Exit(e.returncode)
+
+
+def _load_remote() -> tuple[remote.Remote, Path, str]:
+    pdp = load_pdp()
+    with _remote_errors():
+        cluster = remote.load_remote(pdp.project_root)
+    return cluster, pdp.project_root, remote.session_name(pdp.project_name)
+
+
+@remote_app.command("start")
+def remote_start(
+    port: Annotated[
+        int | None, typer.Option("--port", "-p", help="Port for the Dagster UI.")
+    ] = None,
+) -> None:
+    """Push to the cluster in .env, run Dagster there with --slurm in tmux, and tunnel the UI. Reconnects if the session is already running."""
+
+    cluster, root, session = _load_remote()
+    with _remote_errors():
+        port_ = str(port or cluster.port)
+
+        if remote.has_session(cluster, session):
+            err_console.print(
+                f"Session {session} already running, not pushing. "
+                "`pdp remote stop` to restart it."
+            )
+        else:
+            remote.check_uvx(cluster)
+            if remote.port_open(cluster, port_):
+                raise remote.RemoteError(
+                    f"Port {port_} is already in use on {cluster.host}. "
+                    "Pick another with -p or PDP_REMOTE_PORT."
+                )
+            remote.sync(cluster, root)
+            remote.start_session(cluster, session, port_)
+            console.print(
+                "Waiting for Dagster (the first start installs pdp and Dagster)..."
+            )
+            remote.wait_for_dagster(cluster, session, port_)
+
+        console.print(
+            f"Dagster UI: http://127.0.0.1:{port_} "
+            "(ctrl+c closes the tunnel. Dagster keeps running)"
+        )
+        try:
+            returncode = remote.tunnel(cluster, port_).returncode
+        except KeyboardInterrupt:
+            returncode = 0
+
+    raise typer.Exit(returncode)
+
+
+@remote_app.command("push")
+def remote_push() -> None:
+    """Push the project to the cluster. output/ is sent only on the first push."""
+
+    cluster, root, session = _load_remote()
+    with _remote_errors():
+        remote.push(cluster, root, session)
+
+
+@remote_app.command("pull")
+def remote_pull(
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Pull even while pdp jobs are running."),
+    ] = False,
+) -> None:
+    """Pull every task's output/ back from the cluster."""
+
+    cluster, root, _ = _load_remote()
+    with _remote_errors():
+        remote.pull(cluster, root, force)
+
+
+@remote_app.command("stop")
+def remote_stop() -> None:
+    """Stop the remote Dagster session and cancel pdp's Slurm jobs."""
+
+    cluster, _, session = _load_remote()
+    with _remote_errors():
+        remote.stop(cluster, session)
