@@ -17,6 +17,36 @@ def requires_initialization(method):
     return wrapper
 
 
+def _yaml_type_name(value) -> str:
+    if isinstance(value, dict):
+        return "dict"
+    if isinstance(value, list):
+        return "list"
+    return type(value).__name__
+
+
+def slurm_errors(config: dict) -> list[str]:
+    if "slurm" not in config:
+        return []
+
+    slurm = config["slurm"]
+    if not isinstance(slurm, dict):
+        return [
+            f"slurm should be a mapping, like 'slurm: {{mem: 4G}}', but got {_yaml_type_name(slurm)}"
+        ]
+
+    errors = []
+    for key, value in slurm.items():
+        if not isinstance(key, str):
+            errors.append(f"slurm key {key!r} must be a string")
+        elif not isinstance(value, (str, int, float, bool)):
+            errors.append(
+                f"slurm.{key} must be a string, number or boolean, "
+                f"got {_yaml_type_name(value)}"
+            )
+    return errors
+
+
 class GenericConfig(ABC):
     def __init__(self, name, path_to_config) -> None:
         self.yaml = YAML()
@@ -100,7 +130,7 @@ class PDPConfig(GenericConfig):
         else:
             if not isinstance(self.config["tasks"], list):
                 errors.append(
-                    f"tasks must be a list, got {type(self.config['tasks']).__name__}"
+                    f"tasks must be a list, got {_yaml_type_name(self.config['tasks'])}"
                 )
             else:
                 errors += [
@@ -119,6 +149,8 @@ class PDPConfig(GenericConfig):
                     for env_var, names in by_env_var.items()
                     if len(names) > 1
                 ]
+
+        errors += slurm_errors(self.config)
 
         return errors
 
@@ -145,7 +177,7 @@ class TaskConfig(GenericConfig):
         allowed_keys = {"name", *self.CONFIG_DEFAULTS}
         errors = []
 
-        unexpected = set(self.config.keys()) - allowed_keys
+        unexpected = set(self.config.keys()) - allowed_keys - {"slurm"}
         missing = allowed_keys - set(self.config.keys())
 
         if unexpected:
@@ -162,8 +194,10 @@ class TaskConfig(GenericConfig):
             if key in self.config and not isinstance(self.config[key], type(default)):
                 errors.append(
                     f"{key} must be {type(default).__name__}, "
-                    f"got {type(self.config[key]).__name__}"
+                    f"got {_yaml_type_name(self.config[key])}"
                 )
+
+        errors += slurm_errors(self.config)
 
         return errors
 
@@ -178,3 +212,9 @@ class TaskConfig(GenericConfig):
     def depends_on(self):
         self.config = self.read_config_file()
         return self.config.get("depends_on", [])
+
+    @property
+    @requires_initialization
+    def slurm(self) -> dict:
+        self.config = self.read_config_file()
+        return self.config.get("slurm", {})

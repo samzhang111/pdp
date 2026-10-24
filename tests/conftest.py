@@ -93,7 +93,7 @@ def real_task(tmp_path):
 
 
 @pytest.fixture
-def real_chain(tmp_path):
+def real_dag(tmp_path):
     """import -> clean -> report on real filesystem"""
     (tmp_path / "pdp.yml").write_text(
         "name: test\ntasks:\n  - import\n  - clean\n  - report\n"

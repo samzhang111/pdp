@@ -155,10 +155,8 @@ class TestStaleness:
 
         expect(task.is_stale).to(be_false)
 
-
     def test_task_is_stale_when_only_one_of_multiple_dependencies_is_newer(
-        self,
-        two_deps_and_clean
+        self, two_deps_and_clean
     ):
         import1, import2, clean = two_deps_and_clean
 
@@ -167,7 +165,6 @@ class TestStaleness:
         touch(import2.output_folder / "data2.csv", 3000)
 
         expect(clean.is_stale).to(be_true)
-
 
     def test_task_not_stale_when_all_dependencies_are_older(self, two_deps_and_clean):
         import1, import2, clean = two_deps_and_clean
@@ -178,8 +175,9 @@ class TestStaleness:
 
         expect(clean.is_stale).to(be_false)
 
-
-    def test_task_is_stale_when_input_file_symlink_target_is_newer(self, real_task, tmp_path):
+    def test_task_is_stale_when_input_file_symlink_target_is_newer(
+        self, real_task, tmp_path
+    ):
         target = tmp_path / "data.csv"
         touch(target, 2000)
         (real_task.input_folder / "data.csv").symlink_to(target)
@@ -187,12 +185,10 @@ class TestStaleness:
 
         expect(real_task.is_stale).to(be_true)
 
-
     def test_task_is_stale_when_output_has_no_files(self, real_task):
         (real_task.output_folder / "empty_subdir").mkdir()
 
         expect(real_task.is_stale).to(be_true)
-
 
     def test_task_ignores_broken_symlink_in_input(self, real_task, tmp_path):
         (real_task.input_folder / "gone.csv").symlink_to(tmp_path / "missing.csv")
@@ -200,13 +196,11 @@ class TestStaleness:
 
         expect(real_task.is_stale).to(be_false)
 
-
     def test_task_is_stale_when_input_file_is_newer(self, real_task):
         touch(real_task.input_folder / "data.csv", 2000)
         touch(real_task.output_folder / "result.csv", 1000)
 
         expect(real_task.is_stale).to(be_true)
-
 
     def test_task_is_stale_when_hand_file_is_newer(self, real_task):
         hand = real_task.task_directory / "hand"
@@ -216,13 +210,11 @@ class TestStaleness:
 
         expect(real_task.is_stale).to(be_true)
 
-
     def test_task_not_stale_when_hand_is_empty(self, real_task):
         (real_task.task_directory / "hand").mkdir()
         touch(real_task.output_folder / "result.csv", 1000)
 
         expect(real_task.is_stale).to(be_false)
-
 
     def test_task_not_stale_when_input_is_missing(self, real_task):
         real_task.input_folder.rmdir()
@@ -230,8 +222,9 @@ class TestStaleness:
 
         expect(real_task.is_stale).to(be_false)
 
-
-    def test_task_does_not_follow_directory_symlinks_in_input(self, real_task, tmp_path):
+    def test_task_does_not_follow_directory_symlinks_in_input(
+        self, real_task, tmp_path
+    ):
         """Dependency links are directory symlinks; their freshness comes from
         the dependency checks, not the input/ walk."""
         elsewhere = tmp_path / "elsewhere"
@@ -242,9 +235,8 @@ class TestStaleness:
 
         expect(real_task.is_stale).to(be_false)
 
-
-    def test_chain_not_stale_when_everything_is_fresh(self, real_chain):
-        import_task, clean, report = real_chain
+    def test_chain_not_stale_when_everything_is_fresh(self, real_dag):
+        import_task, clean, report = real_dag
         touch(import_task.src_folder / "script.py", 500)
         touch(import_task.output_folder / "data.csv", 1000)
         touch(clean.output_folder / "clean.csv", 2000)
@@ -252,25 +244,24 @@ class TestStaleness:
 
         expect(report.is_stale).to(be_false)
 
-
-    def test_task_is_stale_when_dependency_is_stale_despite_fresh_mtimes(self, real_chain):
-        import_task, clean, _ = real_chain
+    def test_task_is_stale_when_dependency_is_stale_despite_fresh_mtimes(
+        self, real_dag
+    ):
+        import_task, clean, _ = real_dag
         touch(import_task.output_folder / "data.csv", 1000)
         touch(import_task.src_folder / "script.py", 2000)  # import is stale
         touch(clean.output_folder / "clean.csv", 3000)  # newer than everything
 
         expect(clean.is_stale).to(be_true)
 
-
-    def test_task_is_stale_when_dependency_output_is_empty(self, real_chain):
-        _, clean, _ = real_chain
+    def test_task_is_stale_when_dependency_output_is_empty(self, real_dag):
+        _, clean, _ = real_dag
         touch(clean.output_folder / "clean.csv", 1000)
 
         expect(clean.is_stale).to(be_true)
 
-
-    def test_staleness_is_transitive_across_chain(self, real_chain):
-        import_task, clean, report = real_chain
+    def test_staleness_is_transitive_across_dag(self, real_dag):
+        import_task, clean, report = real_dag
         touch(import_task.output_folder / "data.csv", 1000)
         touch(import_task.src_folder / "script.py", 2000)  # import is stale
         touch(clean.output_folder / "clean.csv", 3000)
@@ -297,3 +288,24 @@ class TestStaleness:
         touch(real_task.task_directory / ".task.yml.swp", 2000)
 
         expect(real_task.is_stale).to(be_false)
+
+
+class TestSlurmFlags:
+    def test_renders_flags_in_key_order(self, real_task):
+        write_task_yml(
+            real_task.task_directory, slurm={"time": "02:00:00", "mem": "16G"}
+        )
+
+        expect(real_task.slurm_flags({})).to(equal(["--mem=16G", "--time=02:00:00"]))
+
+    def test_task_keys_override_project_defaults(self, real_task):
+        write_task_yml(real_task.task_directory, slurm={"mem": "32G"})
+
+        flags = real_task.slurm_flags(
+            {"mem": "16G", "partition": "general", "ntasks": 1}
+        )
+
+        expect(flags).to(equal(["--mem=32G", "--ntasks=1", "--partition=general"]))
+
+    def test_no_slurm_block_uses_project_defaults(self, real_task):
+        expect(real_task.slurm_flags({"mem": "16G"})).to(equal(["--mem=16G"]))

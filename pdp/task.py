@@ -139,6 +139,24 @@ class Task:
     def depends_on(self) -> list[str]:
         return self.task_config.depends_on
 
+    def slurm_flags(self, project_defaults: dict) -> list[str]:
+        """Convert pdp.yml and task.yml slurm configs into srun flags
+
+        Exclusive flags should be added as `exclusive-flag: true`,
+        which becomes `--exclusive`. Project defaults are overriden
+        by task configs"""
+        merged = project_defaults | self.task_config.slurm
+
+        flags = []
+        for key, value in sorted(merged.items()):
+            if value is False:  # Task override of pdp.yml to set as false
+                continue
+            if value is True:  # Exclusive flags
+                flags.append(f"--{key}")
+            else:  # mappings
+                flags.append(f"--{key}={value}")
+        return flags
+
     def __repr__(self):
         return f"Task({self.task_name}, {self.task_directory})"
 

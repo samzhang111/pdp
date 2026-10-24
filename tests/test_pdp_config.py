@@ -18,6 +18,10 @@ def read_config_file(filename):
     return dict(YAML().load(Path(filename)))
 
 
+def write_config_file(filename, data):
+    YAML().dump(data, Path(filename))
+
+
 class TestInit:
     def test_config_initialization(self, config, fs):
         expect(config.read_config_file()).to(equal({}))
@@ -73,7 +77,9 @@ class TestValidate:
         expect(config.validate()).to(be_false)
 
     def test_config_validate_flags_bad_task_name(self, fs):
-        Path("pdp.yml").write_text("name: test\ntasks:\n  - import\n  - clean.data\n")
+        write_config_file(
+            "pdp.yml", {"name": "test", "tasks": ["import", "clean.data"]}
+        )
 
         errors = PDPConfig("test", "pdp.yml").validation_errors()
 
@@ -105,15 +111,80 @@ def test_pdp_config_repr_prints_config_path(config, fs):
     expect(str(config)).to(equal("PDPConfig(test, /pdp.yml)"))
 
 
-def test_pdp_config_flags_task_names_with_colliding_env_vars(fs):
-    Path("pdp.yml").write_text(
-        "name: test\ntasks:\n  - import\n  - clean-data\n  - clean_data\n"
-        "  - Report\n  - report\n"
+def test_pdp_config_throws_for_colliding_task_names(fs):
+    write_config_file(
+        "pdp.yml",
+        {
+            "name": "test",
+            "tasks": ["import", "clean-data", "clean_data", "Report", "report"],
+        },
     )
 
     errors = PDPConfig("test", "pdp.yml").validation_errors()
 
-    expect(errors).to(equal([
-        "task names clean-data, clean_data all map to PDP_INPUT_CLEAN_DATA",
-        "task names Report, report all map to PDP_INPUT_REPORT",
-    ]))
+    expect(errors).to(
+        equal(
+            [
+                "task names clean-data, clean_data all map to PDP_INPUT_CLEAN_DATA",
+                "task names Report, report all map to PDP_INPUT_REPORT",
+            ]
+        )
+    )
+
+
+class TestSlurmConfig:
+    def test_task_config_without_slurm_is_still_valid(self, fs):
+        config = TaskConfig("task1", "task.yml")
+        config.initialize()
+
+        expect(read_config_file("task.yml")).not_to(have_key("slurm"))
+        expect(config.validate()).to(be_true)
+
+    def test_task_config_takes_slurm_config(self, fs):
+        write_config_file(
+            "task.yml",
+            {
+                "name": "task1",
+                "entrypoint": "",
+                "depends_on": [],
+                "slurm": {
+                    "time": "02:00:00",
+                    "mem": "16G",
+                    "cpus-per-task": 4,
+                    "ntasks": 1,
+                },
+            },
+        )
+
+        expect(TaskConfig("task1", "task.yml").validation_errors()).to(equal([]))
+
+    def test_pdp_config_accepts_slurm_mappings(self, fs):
+        write_config_file(
+            "pdp.yml",
+            {
+                "name": "test",
+                "tasks": [],
+                "slurm": {"partition": "general", "nodes": 1, "mem": "4G"},
+            },
+        )
+
+        expect(PDPConfig("test", "pdp.yml").validation_errors()).to(equal([]))
+
+    def test_slurm_config_with_flags_is_rejected(self, fs):
+        write_config_file("pdp.yml", {"name": "test", "tasks": [], "slurm": "general"})
+        write_config_file(
+            "task.yml",
+            {
+                "name": "task1",
+                "entrypoint": "",
+                "depends_on": [],
+                "slurm": ["--mem=16G"],
+            },
+        )
+
+        expect(PDPConfig("test", "pdp.yml").validation_errors()).to(
+            contain(contain("slurm should be a mapping"), contain("got str"))
+        )
+        expect(TaskConfig("task1", "task.yml").validation_errors()).to(
+            contain(contain("slurm should be a mapping"), contain("got list"))
+        )
