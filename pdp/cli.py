@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 from importlib.metadata import version as pkg_version
@@ -17,7 +18,7 @@ app = typer.Typer(no_args_is_help=True, rich_markup_mode="rich")
 
 dagster_app = typer.Typer(no_args_is_help=True, help="Run PDP with Dagster.")
 app.add_typer(dagster_app, name="dagster")
-app.add_typer(dagster_app, name="dg", hidden=True) # dg commands also work
+app.add_typer(dagster_app, name="dg", hidden=True)  # dg commands also work
 
 err_console = Console(stderr=True)
 console = Console()
@@ -70,7 +71,7 @@ def init(
 ) -> None:
     """
     Initialize the project.
-    
+
     Sets a project name, then creates tasks for every task listed in pdp.yml, if it exists.
     """
 
@@ -81,8 +82,8 @@ def init(
 @app.command()
 def scaffold():
     """
-    Scaffold the project. 
-    
+    Scaffold the project.
+
     For each task, create input and output folders if they don't already exist.
     """
 
@@ -113,7 +114,7 @@ def create(task_names: list[str]) -> None:
 def validate():
     """Validate the pdp yml.
 
-    Checks that: 
+    Checks that:
     - Each task has an input/, output/, and src/ folder
     - Each task has a valid `task.yml`
     - Any `depends_on` references a valid task
@@ -195,9 +196,13 @@ def tree() -> None:
 
 
 @dagster_app.command("dev")
-def dev() -> None:
+def dev(
+    slurm: Annotated[
+        bool, typer.Option("--slurm", help="Run each task as a Slurm job via srun.")
+    ] = False,
+) -> None:
     """Launch the Dagster UI
-    
+
     PDP tasks are automatically converted to Dagster assets along with the DAG. You can find the UI at: [link=http://127.0.0.1:3000]http://127.0.0.1:3000[/link]
 
     This is an optional feature. Make sure you have pdp\\[dagster] installed to use it.
@@ -214,6 +219,14 @@ def dev() -> None:
     if "DAGSTER_HOME" not in env:
         env["DAGSTER_HOME"] = str(root / ".dagster")
         Path(env["DAGSTER_HOME"]).mkdir(exist_ok=True)
+
+    if slurm:
+        if shutil.which("srun") is None:
+            err_console.print(
+                "--slurm needs Slurm's srun on PATH. Run this on a cluster login node"
+            )
+            raise typer.Exit(1)
+        env["PDP_SLURM"] = "1"
 
     # Popen over run to avoid orphan daemon
     proc = subprocess.Popen(

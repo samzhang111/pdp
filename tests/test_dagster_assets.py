@@ -266,6 +266,28 @@ class TestBuildDefinitions:
         with pytest.raises(InvalidConfigError):
             build_definitions(Path.cwd())
 
+    def max_concurrent(self, defs):
+        job = defs.resolve_implicit_global_asset_job_def()
+        resolved = dg.validate_run_config(job, {})
+        return resolved["execution"]["multiprocess"]["max_concurrent"]
+
+    def test_slurm_uses_client_and_max_concurrency(
+        self, import_and_clean_project, monkeypatch
+    ):
+        monkeypatch.delenv("PDP_MAX_CONCURRENT", raising=False)
+        defs = build_definitions(Path.cwd(), slurm=True)
+
+        expect(defs.resources["pipes"]).to(be_a(PdpSlurmClient))  # ty: ignore[not-subscriptable]
+        expect(self.max_concurrent(defs)).to(equal(8))
+
+    def test_slurm_reads_env_for_max_concurrent(
+        self, import_and_clean_project, monkeypatch
+    ):
+        monkeypatch.setenv("PDP_MAX_CONCURRENT", "3")
+        defs = build_definitions(Path.cwd(), slurm=True)
+
+        expect(self.max_concurrent(defs)).to(equal(3))
+
 
 MOCK_SLURM = Path(__file__).parent / "mock_slurm"
 

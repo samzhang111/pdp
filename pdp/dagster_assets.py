@@ -171,16 +171,30 @@ def reconcile(pdp: PDP, instance: dg.DagsterInstance) -> None:
         )
 
 
-def build_definitions(project_root: Path) -> dg.Definitions:
+def build_definitions(project_root: Path, slurm: bool = False) -> dg.Definitions:
     """Pass list of Dagster asset definitions
 
     Args:
         project_root: Root of project as found by `pdp.find_project_root`
+        slurm: If true, submit each task to Slurm with `srun` instead of local subprocess
 
     Returns:
         Dagster definitions
     """
+    assets = build_assets(load_project(project_root))
+    if not slurm:
+        return dg.Definitions(
+            assets=assets,
+            resources={"pdp": PdpResource(), "pipes": dg.PipesSubprocessClient()},
+        )
+
+    # Configured executor overrides default dg settings
+    # Set max concurrency specifically for weird login node behavior
+    max_concurrent = int(os.environ.get("PDP_MAX_CONCURRENT", "8"))
     return dg.Definitions(
-        assets=build_assets(load_project(project_root)),
-        resources={"pdp": PdpResource(), "pipes": dg.PipesSubprocessClient()},
+        assets=assets,
+        resources={"pdp": PdpResource(), "pipes": PdpSlurmClient()},
+        executor=dg.multiprocess_executor.configured(
+            {"max_concurrent": max_concurrent}
+        ),
     )

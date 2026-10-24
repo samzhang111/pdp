@@ -5,6 +5,7 @@ import dagster as dg
 import pytest
 from expects import *
 
+from pdp.slurm_client import PdpSlurmClient
 from tests.helpers import backdate_task_yml, write_task_yml
 
 
@@ -37,6 +38,15 @@ class TestDagsterDefs:
         expect(set(defs.resolve_all_asset_keys())).to(
             equal({dg.AssetKey("import"), dg.AssetKey("clean")})
         )
+
+    def test_pdp_slurm_env_selects_slurm_client(
+        self, import_and_clean_project, monkeypatch
+    ):
+        set_env(monkeypatch, import_and_clean_project.project_root)
+        monkeypatch.setenv("PDP_SLURM", "1")
+        defs = import_defs_module(monkeypatch).defs
+
+        expect(defs.resources["pipes"]).to(be_a(PdpSlurmClient))
 
     def test_reconciles_when_defs_load_current_tasks(self, real_pdp, monkeypatch):
         task = real_pdp.create_task("task1")

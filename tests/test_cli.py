@@ -25,10 +25,10 @@ def read_config_file(filename):
     return dict(YAML().load(Path(filename)))
 
 
-def run_dagster_dev(returncode=0):
+def run_dagster_dev(returncode=0, args=()):
     with patch("subprocess.Popen") as popen:
         popen.return_value.wait.return_value = returncode
-        result = CliRunner(mix_stderr=False).invoke(app, ["dagster", "dev"])
+        result = CliRunner(mix_stderr=False).invoke(app, ["dagster", "dev", *args])
     return result, popen
 
 
@@ -271,4 +271,25 @@ class TestDagsterCli:
 
         expect(result.exit_code).to(equal(1))
         expect(result.stderr).to(contain("Dagster must be installed: `pdp[dagster]`"))
+        popen.assert_not_called()
+
+    @pytest.mark.usefixtures("real_pdp")
+    def test_dagster_dev_slurm_sets_pdp_slurm(self):
+        with patch("shutil.which", return_value="/usr/bin/srun"):
+            result, popen = run_dagster_dev(args=["--slurm"])
+
+        expect(result.exit_code).to(equal(0))
+        expect(popen.call_args.kwargs["env"]["PDP_SLURM"]).to(equal("1"))
+
+    @pytest.mark.usefixtures("real_pdp")
+    def test_dagster_dev_slurm_without_srun_fails(self):
+        with patch("shutil.which", return_value=None):
+            result, popen = run_dagster_dev(args=["--slurm"])
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(
+            contain(
+                "--slurm needs Slurm's srun on PATH. Run this on a cluster login node"
+            )
+        )
         popen.assert_not_called()

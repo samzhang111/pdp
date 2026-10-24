@@ -13,7 +13,7 @@ if not os.environ.get("PDP_PROJECT_ROOT"):
     )
 
 project_root = Path(os.environ["PDP_PROJECT_ROOT"])
-defs = build_definitions(project_root)
+defs = build_definitions(project_root, slurm=bool(os.environ.get("PDP_SLURM")))
 
 # Reconcile events on definition load
 with dg.DagsterInstance.get() as instance:
