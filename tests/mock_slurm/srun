@@ -1,0 +1,15 @@
+#!/bin/sh
+# mock srun scripts for tests
+# slurm_log fixture puts this directory into PATH
+# PdpSlurmClient runs this instead of srun
+
+# Record args into log
+printf '%s\n' "$*" >> "$MOCK_SLURM_LOG/srun"
+
+# Record Pipes files
+printf '%s\n' "$DAGSTER_PIPES_CONTEXT" >> "$MOCK_SLURM_LOG/pipes_context"
+printf '%s\n' "$DAGSTER_PIPES_MESSAGES" >> "$MOCK_SLURM_LOG/pipes_messages"
+
+# Drop leading --flags (always --key=value) and run the real commands
+while [ "${1#--}" != "$1" ]; do shift; done
+exec "$@"

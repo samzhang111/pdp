@@ -121,6 +121,10 @@ class PDPConfig(GenericConfig):
     def tasks(self):
         return self.config.get(self.task_key, [])
 
+    @property
+    def slurm(self) -> dict:
+        return self.config.get("slurm", {})
+
     def validation_errors(self) -> list[str]:
         errors = []
 

@@ -1,7 +1,11 @@
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import dagster as dg
 import pytest
+from dagster_pipes import decode_param
 from expects import *
 
 from pdp.dagster_assets import (
@@ -12,15 +16,18 @@ from pdp.dagster_assets import (
     reconcile,
 )
 from pdp.pdp_errors import InvalidConfigError
+from pdp.slurm_client import PdpSlurmClient
 from tests.helpers import backdate_task_yml, write_task_yml
 
 
-def materialize(pdp, force=False, instance=None) -> dg.ExecuteInProcessResult:
+def materialize(
+    pdp, force=False, instance=None, pipes=None
+) -> dg.ExecuteInProcessResult:
     return dg.materialize(
         build_assets(pdp),
         resources={
             "pdp": PdpResource(force=force),
-            "pipes": dg.PipesSubprocessClient(),
+            "pipes": pipes or dg.PipesSubprocessClient(),
         },
         instance=instance,
         raise_on_error=False,
@@ -258,3 +265,136 @@ class TestBuildDefinitions:
 
         with pytest.raises(InvalidConfigError):
             build_definitions(Path.cwd())
+
+
+MOCK_SLURM = Path(__file__).parent / "mock_slurm"
+
+
+class TestSlurmClient:
+    @pytest.fixture
+    def slurm_log(self, tmp_path_factory, monkeypatch):
+        """Put mock srun and scancel scripts in tests/mock_slurm/"""
+        log = tmp_path_factory.mktemp("slurm_log")
+        monkeypatch.setenv("MOCK_SLURM_LOG", str(log))
+        monkeypatch.setenv("PATH", f"{MOCK_SLURM}{os.pathsep}{os.environ['PATH']}")
+        return log
+
+    @pytest.fixture
+    def dagster_home(self, tmp_path_factory, monkeypatch):
+        home = tmp_path_factory.mktemp("dagster_home")
+        monkeypatch.setenv("DAGSTER_HOME", str(home))
+        return home
+
+    @pytest.fixture
+    def instance(self):
+        with dg.instance_for_test() as instance:
+            yield instance
+
+    def srun_line(self, run_id, task_id, flags):
+        return " ".join(
+            [
+                "--export=ALL",
+                "--quit-on-interrupt",
+                f"--job-name=pdp-{run_id}-{task_id}",
+                *flags,
+                sys.executable,
+                "-m",
+                "pdp.pipes_wrapper",
+                task_id,
+            ]
+        )
+
+    def test_stale_chain_runs_through_srun_with_merged_flags(
+        self, import_and_clean_project, slurm_log, dagster_home
+    ):
+        import_and_clean_project.config.update_config_key(
+            "slurm", {"partition": "general", "mem": "4G"}
+        )
+        write_task_yml("import", entrypoint="touch output/data.csv")
+        write_task_yml(
+            "clean",
+            entrypoint="cp input/import/data.csv output/ran",
+            depends_on=["import"],
+            slurm={"mem": "16G"},
+        )
+
+        result = materialize(import_and_clean_project, pipes=PdpSlurmClient())
+
+        expect(result.success).to(be_true)
+        expect(Path("clean/output/ran").exists()).to(be_true)
+        expect((slurm_log / "srun").read_text().splitlines()).to(
+            equal(
+                [
+                    self.srun_line(
+                        result.run_id, "import", ["--mem=4G", "--partition=general"]
+                    ),
+                    self.srun_line(
+                        result.run_id, "clean", ["--mem=16G", "--partition=general"]
+                    ),
+                ]
+            )
+        )
+
+    def test_pipes_messages_reach_the_run_logs(
+        self, real_pdp, slurm_log, dagster_home, instance
+    ):
+        real_pdp.create_task("task1")
+        write_task_yml("task1", entrypoint="touch output/ran")
+
+        result = materialize(real_pdp, instance=instance, pipes=PdpSlurmClient())
+
+        messages = [entry.user_message for entry in instance.all_logs(result.run_id)]
+        expect(messages).to(contain(contain("task1 returncode: 0")))
+
+    def test_pipes_files_live_under_dagster_home_and_are_cleaned_up(
+        self, real_pdp, slurm_log, dagster_home
+    ):
+        real_pdp.create_task("task1")
+        write_task_yml("task1", entrypoint="touch output/ran")
+
+        result = materialize(real_pdp, pipes=PdpSlurmClient())
+
+        pipes_dir = dagster_home / "pipes" / result.run_id / "task1"
+        context = decode_param((slurm_log / "pipes_context").read_text().strip())
+        messages = decode_param((slurm_log / "pipes_messages").read_text().strip())
+        expect(context["path"]).to(equal(str(pipes_dir / "context.json")))
+        expect(messages["path"]).to(equal(str(pipes_dir / "messages.jsonl")))
+        expect(list(pipes_dir.iterdir())).to(be_empty)
+
+    def test_failed_task_cleans_up_and_skips_dependent_tasks(
+        self, import_and_clean_project, slurm_log, dagster_home
+    ):
+        write_task_yml("import", entrypoint="touch output/partial && exit 1")
+        write_task_yml("clean", entrypoint="touch output/ran", depends_on=["import"])
+
+        result = materialize(import_and_clean_project, pipes=PdpSlurmClient())
+
+        expect(result.success).to(be_false)
+        expect(materializations(result)).to(equal({}))
+        expect(Path("import/output/partial").exists()).to(be_false)
+        expect(Path("clean/output/ran").exists()).to(be_false)
+
+    def test_interrupt_cancels_the_slurm_job(
+        self, real_pdp, slurm_log, dagster_home, monkeypatch
+    ):
+        real_pdp.create_task("task1")
+        write_task_yml("task1", entrypoint="sleep 30")
+
+        # runs can't be terminated from outside, so interrupt have to interrupt srun wait
+        original_wait = subprocess.Popen.wait
+        interrupted = []
+
+        def interrupt_srun_once(self, timeout=None):
+            if self.args[0] == "srun" and not interrupted:
+                interrupted.append(True)
+                raise dg.DagsterExecutionInterruptedError()
+            return original_wait(self, timeout=timeout)
+
+        monkeypatch.setattr(subprocess.Popen, "wait", interrupt_srun_once)
+
+        result = materialize(real_pdp, pipes=PdpSlurmClient())
+
+        expect(result.success).to(be_false)
+        expect((slurm_log / "scancel").read_text().splitlines()).to(
+            equal([f"--name=pdp-{result.run_id}-task1"])
+        )

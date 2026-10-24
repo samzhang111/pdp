@@ -6,6 +6,7 @@ from pathlib import Path
 import dagster as dg
 
 from .pdp import PDP
+from .slurm_client import PdpSlurmClient
 from .task import Task, latest_mtime_in_dir
 
 DATA_VERSION_TAG = "dagster/data_version"
@@ -29,7 +30,9 @@ def output_data_version(task: Task) -> dg.DataVersion:
     return dg.DataVersion(hashlib.sha256(repr(snapshot).encode()).hexdigest())
 
 
-def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
+def build_asset(
+    task: Task, project_root: Path, slurm_defaults: dict
+) -> dg.AssetsDefinition:
     """Build a Dagster asset from a single pdp Task
 
     Use multi_asset for each Task as workaround for naming conventions.
@@ -39,6 +42,7 @@ def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
     Args:
         task: A single pdp Task
         project_root: Root of project, found with `pdp.find_project_root`
+        slurm_defaults: `slurm:` mapping from pdp.yml, used only under Slurm
 
     Returns:
         Dagster asset definition with metadata and data version snapshot
@@ -58,7 +62,7 @@ def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
     def _asset(
         context: dg.AssetExecutionContext,
         pdp: PdpResource,
-        pipes: dg.PipesSubprocessClient,
+        pipes: dg.ResourceParam[dg.PipesClient],
     ) -> dg.MaterializeResult:
         if not task.entrypoint:
             raise dg.Failure("no entrypoint")
@@ -70,11 +74,17 @@ def build_asset(task: Task, project_root: Path) -> dg.AssetsDefinition:
             )
 
         # Run python -m pdp.pipes_wrapper <task_id> as subprocess through pipes
-        pipes.run(
-            context=context,
-            command=[sys.executable, "-m", "pdp.pipes_wrapper", task_id],
-            cwd=str(project_root),
-        )
+        command = [sys.executable, "-m", "pdp.pipes_wrapper", task_id]
+        cwd = str(project_root)
+        if isinstance(pipes, PdpSlurmClient):
+            pipes.run(
+                context=context,
+                command=command,
+                cwd=cwd,
+                slurm_flags=task.slurm_flags(slurm_defaults),
+            )
+        else:
+            pipes.run(context=context, command=command, cwd=cwd)
 
         no_output = latest_mtime_in_dir(task.output_folder) is None
         if no_output:
@@ -98,7 +108,11 @@ def build_assets(pdp: PDP) -> list[dg.AssetsDefinition]:
         List of Dagster asset definitions
     """
     project_root = pdp.project_root
-    return [build_asset(task, project_root) for task in pdp.flatten_tasks().values()]
+    slurm_defaults = pdp.config.slurm
+    return [
+        build_asset(task, project_root, slurm_defaults)
+        for task in pdp.flatten_tasks().values()
+    ]
 
 
 def load_project(project_root: Path) -> PDP:

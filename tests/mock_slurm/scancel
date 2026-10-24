@@ -1,0 +1,4 @@
+#!/bin/sh
+# mock scancel for tests. records args to logs
+# Logs to MOCK_SLURM_LOG
+printf '%s\n' "$*" >> "$MOCK_SLURM_LOG/scancel"
