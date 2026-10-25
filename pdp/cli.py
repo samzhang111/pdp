@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
+from graphlib import TopologicalSorter
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Annotated
@@ -16,7 +17,11 @@ from pdp import remote
 from pdp.pdp import PDP, RunReport
 from pdp.pdp_errors import InvalidConfigError
 
-app = typer.Typer(no_args_is_help=True, rich_markup_mode="rich")
+app = typer.Typer(
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
 dagster_app = typer.Typer(no_args_is_help=True, help="Run PDP with Dagster.")
 app.add_typer(dagster_app, name="dagster")
@@ -26,6 +31,7 @@ remote_app = typer.Typer(
     no_args_is_help=True, help="Run the project on a Slurm cluster over SSH."
 )
 app.add_typer(remote_app, name="remote")
+app.add_typer(remote_app, name="r", hidden=True)
 
 err_console = Console(stderr=True)
 console = Console()
@@ -87,6 +93,7 @@ def init(
 
 
 @app.command()
+@app.command("s", hidden=True)
 def scaffold():
     """
     Scaffold the project.
@@ -99,6 +106,7 @@ def scaffold():
 
 
 @app.command()
+@app.command("c", hidden=True)
 def create(task_names: list[str]) -> None:
     """
     Create a task.
@@ -118,6 +126,7 @@ def create(task_names: list[str]) -> None:
 
 
 @app.command()
+@app.command("v", hidden=True)
 def validate():
     """Validate the pdp yml.
 
@@ -141,6 +150,7 @@ def validate():
 
 
 @app.command()
+@app.command("r", hidden=True)
 def run(
     task_id: Annotated[str | None, typer.Argument()] = None,
     force: Annotated[
@@ -192,12 +202,61 @@ def run(
 
 
 @app.command()
+@app.command("t", hidden=True)
 def tree() -> None:
     """Print the task tree as flat list with dependencies."""
 
     pdp = load_pdp()
     tree = pdp.task_tree()
     rprint(tree)
+
+    raise typer.Exit(0)
+
+
+@app.command()
+@app.command("s", hidden=True)
+def status(
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose", "-v", help="Show description, entrypoint, and slurm flags"
+        ),
+    ] = False,
+) -> None:
+    """Print status for each task
+
+    Verbose output includes description, entrypoint, and slurm flags"""
+
+    pdp = load_pdp()
+    flattened = pdp.flatten_tasks()
+    graph = {tid: task.depends_on for tid, task in flattened.items()}
+
+    console.print()
+    for i, tid in enumerate(TopologicalSorter(graph).static_order()):
+        if verbose and i:
+            console.print()
+        task = flattened[tid]
+        status = "[red]Stale[/]" if task.is_stale else "[blue]Fresh[/]"
+        if verbose:
+            console.print(f"[green]{tid}[/]")
+            console.print(f"  status: {status}")
+        else:
+            console.print(f"{tid}: {status}")
+        if verbose:
+            if task.description:
+                console.print(f"  description: {task.description}", markup=False)
+            console.print(f"  depends on: {', '.join(task.depends_on) or '-'}")
+            console.print(
+                f"  entrypoint: {task.entrypoint or '(none)'}",
+                markup=False,
+                highlight=False,
+            )
+            if task.task_config.slurm:
+                flags = ", ".join(
+                    f"{key}={value}" for key, value in task.task_config.slurm.items()
+                )
+                console.print(f"  slurm: {flags}", markup=False)
+    console.print()
 
     raise typer.Exit(0)
 
@@ -298,9 +357,7 @@ def remote_start(
                 )
             remote.sync(cluster, root)
             remote.start_session(cluster, session, port_)
-            console.print(
-                "Waiting for Dagster (the first start installs pdp and Dagster)..."
-            )
+            console.print("Waiting for Dagster...")
             remote.wait_for_dagster(cluster, session, port_)
 
         console.print(
@@ -338,10 +395,58 @@ def remote_pull(
         remote.pull(cluster, root, force)
 
 
+@remote_app.command("status")
+@remote_app.command("s", hidden=True)
+def remote_status() -> None:
+    """Show the remote config, if the project exists on remote, and what is running there."""
+
+    cluster, _, session = _load_remote()
+    console.print()
+    console.print(f"host:     {cluster.host}", markup=False)
+    console.print(f"path:     {cluster.path}", markup=False, highlight=False)
+    console.print(f"port:     {cluster.port}", markup=False, highlight=False)
+    console.print(
+        f"version:  {cluster.spec}", markup=False, soft_wrap=True, highlight=False
+    )
+
+    with _remote_errors():
+        if not remote.reachable(cluster):
+            raise remote.RemoteError(f"Cannot reach {cluster.host} over SSH.")
+
+        pushed = remote.exists(cluster)
+        console.print(f"project:  {'exists' if pushed else 'not pushed yet'}")
+
+        running = remote.has_session(cluster, session)
+        console.print(
+            f"session:  {session} {'[blue]running[/]' if running else '[red]not running[/]'}"
+        )
+
+        if remote.port_open(cluster, cluster.port):
+            console.print(
+                f"dagster: listening on {cluster.port} (tunnel: pdp remote start)"
+            )
+        else:
+            console.print(f"dagster:  not listening on {cluster.port}", highlight=False)
+
+        try:
+            job_ids = remote.pdp_job_ids(cluster)
+            jobs = f"{len(job_ids)} ({', '.join(job_ids)})" if job_ids else "0"
+        except subprocess.CalledProcessError:
+            jobs = "unknown (squeue failed)"
+        console.print(f"jobs:     {jobs}", highlight=False)
+
+        console.print()
+
+
 @remote_app.command("stop")
 def remote_stop() -> None:
     """Stop the remote Dagster session and cancel pdp's Slurm jobs."""
 
     cluster, _, session = _load_remote()
     with _remote_errors():
-        remote.stop(cluster, session)
+        killed, job_ids = remote.stop(cluster, session)
+
+    if killed:
+        console.print(f"Stopped session {session} on {cluster.host}.", markup=False)
+    if job_ids:
+        console.print(f"Cancelled Slurm jobs: {', '.join(job_ids)}")

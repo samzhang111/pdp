@@ -35,7 +35,12 @@ def remote_project(real_pdp):
 
 
 def fake_run(
-    session=False, remote_has_pdp=True, squeue="", ports=(False, True), uvx=True
+    session=False,
+    remote_has_pdp=True,
+    squeue="",
+    ports=(False, True),
+    uvx=True,
+    reachable=True,
 ):
     """Patch subprocess.run, answer ssh commands, record every argv"""
     port_answers = list(ports)
@@ -43,7 +48,9 @@ def fake_run(
     def run(argv, **kwargs):
         cmd = argv[-1]
         rc = 0
-        if "has-session" in cmd:
+        if not reachable:
+            rc = 255
+        elif "has-session" in cmd:
             rc = 0 if session else 1
         elif "/dev/tcp/" in cmd:
             is_open = port_answers.pop(0) if len(port_answers) > 1 else port_answers[0]
@@ -351,6 +358,47 @@ class TestStop:
                 ]
             )
         )
+        expect(result.stdout).to(contain("Stopped session pdp-test on me@login1"))
+        expect("Cancelled Slurm jobs: 11, 13" in result.stdout).to(equal(bool(cancel)))
+
+
+class TestStatus:
+    @pytest.mark.usefixtures("remote_project")
+    def test_reports_project_session_dagster_and_pdp_jobs(self):
+        squeue = "11 pdp-run1-import\n12 my-other-job\n"
+        with fake_run(session=True, ports=(True,), squeue=squeue):
+            result = invoke("remote", "status")
+
+        expect(result.exit_code).to(equal(0))
+        expect(result.stdout).to(
+            contain(
+                "me@login1",
+                "/gpfs/proj",
+                "project:  exists",
+                "pdp-test running",
+                "listening on 3000",
+                "jobs:     1 (11)",
+            )
+        )
+
+    @pytest.mark.usefixtures("remote_project")
+    def test_not_pushed_and_nothing_running(self):
+        with fake_run(remote_has_pdp=False, ports=(False,)):
+            result = invoke("remote", "status")
+
+        expect(result.exit_code).to(equal(0))
+        expect(result.stdout).to(
+            contain("not pushed yet", "not running", "not listening", "jobs:     0")
+        )
+
+    @pytest.mark.usefixtures("remote_project")
+    def test_unreachable_host_exits_1(self):
+        with fake_run(reachable=False) as run:
+            result = invoke("remote", "status")
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(contain("Cannot reach me@login1"))
+        expect(remote_cmds(run)).to(equal(["true"]))
 
 
 def test_pull_rsync_brings_back_only_output(tmp_path):

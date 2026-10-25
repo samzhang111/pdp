@@ -118,6 +118,15 @@ def check_uvx(remote: Remote) -> None:
         )
 
 
+def reachable(remote: Remote) -> bool:
+    return remote.ssh("true", capture_output=True).returncode == 0
+
+
+def exists(remote: Remote) -> bool:
+    """Whether project has been pushed to remote"""
+    return remote.ssh(f"test -e {remote.path}/pdp.yml").returncode == 0
+
+
 def push_args(root: Path, dest: str, send_output: bool) -> list[str]:
     excludes = PUSH_EXCLUDES if send_output else [*PUSH_EXCLUDES, OUTPUT_EXCLUDE]
     return ["-a", *(f"--exclude={e}" for e in excludes), f"{root}/", dest]
@@ -129,8 +138,7 @@ def sync(remote: Remote, root: Path) -> None:
     Brings symlinks and state of task staleness. Sends contents of
     `output/` only on the first push, because remote project should be
     the source of truth after that and we don't want to overwrite anything."""
-    first_push = remote.ssh(f"test -e {remote.path}/pdp.yml").returncode != 0
-    remote.rsync(push_args(root, remote.target, send_output=first_push))
+    remote.rsync(push_args(root, remote.target, send_output=not exists(remote)))
 
 
 def push(remote: Remote, root: Path, session: str) -> None:
@@ -162,7 +170,7 @@ def port_open(remote: Remote, port: str) -> bool:
 
 def wait_for_dagster(remote: Remote, session: str, port: str) -> None:
     """Wait until Dagster is booted and listening.
-    
+
     Might take longer on first run if installing."""
     while not port_open(remote, port):
         if not has_session(remote, session):
@@ -186,33 +194,37 @@ def pdp_job_ids(remote: Remote) -> list[str]:
         # --me user jobs only
         # -h no header line
         # output format: 'id jobname'
-        "squeue --me -h -o '%i %j'", capture_output=True, text=True, check=True
+        "squeue --me -h -o '%i %j'",
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     jobs = (line.split(maxsplit=1) for line in out.splitlines() if line.strip())
     return [job_id for job_id, name in jobs if name.startswith("pdp-")]
 
 
-def stop(remote: Remote, session: str) -> None:
-    """Kill tmux session on remote"""
-    remote.ssh(f"tmux kill-session -t {shlex.quote(session)}")
+def stop(remote: Remote, session: str) -> tuple[bool, list[str]]:
+    """Kill tmux session on remote. Returns whether it was killed and cancelled job ids"""
+    killed = remote.ssh(f"tmux kill-session -t {shlex.quote(session)}").returncode == 0
     # scancel --name matches exact names only, so cancel pdp's jobs by id
     job_ids = pdp_job_ids(remote)
     if job_ids:
         remote.ssh(f"scancel {' '.join(job_ids)}", check=True)
+    return killed, job_ids
 
 
 def pull_args(src: str, root: Path) -> list[str]:
     """Copy only outputs from remote back to local machine
-    
+
     Flags are rsync syntax"""
     return [
-        "-a",                       # archive mode - keep symlinks
-        "--delete",                 # remove extraneous files from dest dirs
-        "--filter=P /*/",           # protect top level local dirs
-        "--exclude=/.*/",           # skip dot files in both directions
-        "--include=/*/",            # all files in top level dirs (tasks)
+        "-a",  # archive mode - keep symlinks
+        "--delete",  # remove extraneous files from dest dirs
+        "--filter=P /*/",  # protect top level local dirs
+        "--exclude=/.*/",  # skip dot files in both directions
+        "--include=/*/",  # all files in top level dirs (tasks)
         "--include=/*/output/***",  # all output/ contents, including dirs themselves
-        "--exclude=*",              # exclude the rest
+        "--exclude=*",  # exclude the rest
         src,
         f"{root}/",
     ]

@@ -226,6 +226,24 @@ class TestTreeCli:
         )
 
 
+class TestStatusCli:
+    def test_status_prints_more_when_verbose_task(self, import_and_clean_project):
+        write_task_yml("import", description="Load data")
+
+        result = CliRunner(mix_stderr=False).invoke(app, ["status"])
+
+        expect(result.exit_code).to(equal(0))
+        expect(result.stdout).to(contain("Stale"))
+        expect(result.stdout).to_not(contain("description: Load data"))
+
+        result = CliRunner(mix_stderr=False).invoke(app, ["status", "-v"])
+
+        expect(result.exit_code).to(equal(0))
+        expect(result.stdout).to(contain("status: Stale"))
+        expect(result.stdout).to(contain("description: Load data"))
+        expect(result.stdout).to(contain("depends on: import"))
+
+
 class TestDagsterCli:
     def test_pdp_dagster_dev_calls_module(self, real_pdp):
         result, popen = run_dagster_dev()

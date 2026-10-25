@@ -102,6 +102,17 @@ class TestValidate:
         expect(config.validate()).to(be_false)
 
 
+def test_task_config_description_is_optional_string(fs):
+    base = {"name": "task1", "entrypoint": "", "depends_on": []}
+    write_config_file("task.yml", base)
+    expect(TaskConfig("task1", "task.yml").validation_errors()).to(equal([]))
+
+    write_config_file("task.yml", {**base, "description": 9999999})
+    expect(TaskConfig("task1", "task.yml").validation_errors()).to(
+        equal(["description must be str, got int"])
+    )
+
+
 def test_task_config_repr_prints_name_and_path(fs):
     config = TaskConfig("task1", "task.yml")
     expect(str(config)).to(equal("TaskConfig(task1, /task.yml)"))

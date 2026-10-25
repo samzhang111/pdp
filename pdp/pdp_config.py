@@ -181,7 +181,7 @@ class TaskConfig(GenericConfig):
         allowed_keys = {"name", *self.CONFIG_DEFAULTS}
         errors = []
 
-        unexpected = set(self.config.keys()) - allowed_keys - {"slurm"}
+        unexpected = set(self.config.keys()) - allowed_keys - {"slurm", "description"}
         missing = allowed_keys - set(self.config.keys())
 
         if unexpected:
@@ -201,9 +201,20 @@ class TaskConfig(GenericConfig):
                     f"got {_yaml_type_name(self.config[key])}"
                 )
 
+        if not isinstance(self.config.get("description", ""), str):
+            errors.append(
+                f"description must be str, got {_yaml_type_name(self.config['description'])}"
+            )
+
         errors += slurm_errors(self.config)
 
         return errors
+
+    @property
+    @requires_initialization
+    def description(self) -> str:
+        self.config = self.read_config_file()
+        return self.config.get("description", "")
 
     @property
     @requires_initialization

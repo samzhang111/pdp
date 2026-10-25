@@ -139,6 +139,10 @@ class Task:
     def depends_on(self) -> list[str]:
         return self.task_config.depends_on
 
+    @property
+    def description(self) -> str:
+        return self.task_config.description
+
     def slurm_flags(self, project_defaults: dict) -> list[str]:
         """Convert pdp.yml and task.yml slurm configs into srun flags
 
