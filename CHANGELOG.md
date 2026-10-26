@@ -21,6 +21,8 @@ When merging to main:
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-26
+
 ### Added
 
 - `pdp dagster dev --slurm` runs from the cluster login node and sets each task as Slurm job. Can run concurrently when PDP structure allows for it. Configure with `slurm` block in `pdp.yml` or
@@ -31,6 +33,8 @@ When merging to main:
   - `pdp remote push` - push project to cluster
   - `pdp remote pull` - pull outputs from cluster to local
   - `pdp remote stop` - kill dagster and tmux session on remote
+- Added `pdp status` and `pdp remote status`
+- Added command shortcuts: `-h` for `--help`, `s` for `status`
 
 ## [0.2.1] - 2026-10-18
 
