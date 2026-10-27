@@ -21,6 +21,11 @@ When merging to main:
 
 ## [Unreleased]
 
+### Added
+
+- `CONTRIBUTING.md`
+- Templates for bug reports, feature requests, and pull requests
+
 ## [0.2.2] - 2026-10-26
 
 ### Added

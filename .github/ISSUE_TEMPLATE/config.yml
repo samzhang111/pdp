@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and Discussions
+    url: https://github.com/scienceandhumanitylab/pdp/discussions
+    about: Ask a questions, discuss ideas, or explore applications for pdp.
+  - name: Security vulnerabilities
+    url: mailto:christopher.donovan@uvm.edu
+    about:
+      Please report security issues privately rather than as a public issue.
