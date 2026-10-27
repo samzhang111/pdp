@@ -38,19 +38,22 @@ projects (see [Usage](#usage)).
 
 ## Install
 
-Soon to be available on PyPI. Meanwhile, clone and install with
-[uv tool](https://docs.astral.sh/uv/concepts/tools/):
+Soon to be available on PyPI. Meanwhile, you can install with
+[uv](https://docs.astral.sh/uv/):
 
 ```sh
-# install uv if needed:
+# Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# clone and install pdp
-git clone https://github.com/samzhang111/pdp.git
-uv tool install ./pdp
+# Install PDP
+uv tool install "pdp[dagster] @ git+https://github.com/scienceandhumanitylab/pdp"
 
-# install pdp with dagster (optional):
-uv tool install "./pdp[dagster]"
+# Alternatively, install just the core PDP features
+# No Dagster or Slurm - local use only
+uv tool install "pdp @ git+https://github.com/scienceandhumanitylab/pdp"
+
+# Upgrade PDP
+uv tool upgrade pdp
 ```
 
 **Requirements:**
@@ -104,7 +107,7 @@ Optional
   record events so that changes to outputs outside of Dagster are properly
   recognized.
 
-### Run with Dagster-Slurm
+### Run with Slurm
 
 - The VACC has `uv` and `tmux` installed by default. Both are required to be
   able to run PDP on Slurm.
@@ -130,7 +133,7 @@ slurm:
 
 Jobs inherit the login node's environment (`--export=ALL`).
 
-#### From Local Machine (Recommended)
+#### From Local Machine
 
 Launch your project from your local machine and have PDP sync and run it from
 the cluster with Dagster-Slurm.
@@ -139,33 +142,22 @@ First, put the cluster info in `.env` in your project root, and add `.env` to
 `.gitignore`:
 
 ```sh
-PDP_REMOTE_HOST=vacc-login1
+PDP_REMOTE_HOST=<mynetid>@login1.vacc.uvm.edu
 PDP_REMOTE_PATH=/gpfs1/home/n/e/netid/my-project
-PDP_REMOTE_PORT=3000 # optional
-
-# optionally pdp dagster version - only needed in development to keep uv accurate
-PDP_REMOTE_SPEC=pdp[dagster] @ git+https://github.com/ChrisDonovan307/pdp@740a13e
+PDP_REMOTE_PORT=3002 # optional
 ```
 
-Configure a `~/.ssh/config` which specifies a login node. This is required
-because PDP commands need to reach the same login node when syncing, pushing,
-and pulling.
-
-```
-Host vacc-login1
-    HostName vacc-login1
-    User <netid>
-    ProxyJump <netid>@login.vacc.uvm.edu
-```
+Note that we need to specify a login node so that we can keep communicating with
+the Dagster session.
 
 To run the project:
 
-- `pdp remote start` pushes the project to VACC, opens a tmux session called
-  `pdp-<project-name>`, runs `pdp dagster dev --slurm` and forwards the UI for
-  Dagster. Set the port with `-p` or `PDP_REMOTE_PORT`.
+- `pdp remote start` pushes the project to VACC, opens a persistent tmux
+  session, runs `pdp dagster dev --slurm` and forwards the UI for Dagster. Set
+  the port with `-p` or `PDP_REMOTE_PORT`.
   - Visit the localhost URL to materialize assets with Dagster.
-  - Closing your terminal only closes the tunnel - the tmux sesion will persist
-    on the cluster.
+  - Closing your terminal only closes the tunnel. The tmux session will persist
+    on the cluster and will keep managing jobs.
   - Run `pdp remote start` again to reconnect to the session.
 - `pdp remote push` syncs the project to the cluster.
 - `pdp remote pull` pulls each task's `output/` from the cluster back to your
@@ -193,29 +185,22 @@ assets in the UI.
 - Run `pdp tree` to see the tree structure of all tasks.
 - Run `pdp validate` to validate the project configuration.
 
-## Contributing
+## Development
 
 Install `uv`, clone repository and sync dependencies:
 
 ```sh
+# Install uv if necessary
 curl -LsSf https://astral.sh/uv/install.sh | sh
-git clone https://github.com/samzhang111/pdp.git
+
+# Clone repo and install editable
+git clone https://github.com/scienceandhumanitylab/pdp
+cd pdp
 uv sync
+uv tool install --force --editable ".[dagster]"
 ```
 
-Install as an editable tool with Dagster for development:
-
-```sh
-uv tool install --force --editable "[dagster]"
-```
-
-Guidelines
-
-- Run tests with `uv run pytest`.
-- Code should be formatted and linted with
-  [Ruff](https://github.com/astral-sh/ruff).
-- Use
-  [Google style docstrings](https://google.github.io/styleguide/pyguide.html#docstrings).
+See [Contribution Guidelines](CONTRIBUTING.md) for details.
 
 ## About
 
