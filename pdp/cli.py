@@ -1,6 +1,5 @@
 import importlib.util
 import os
-import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -15,7 +14,8 @@ from rich.console import Console
 
 from pdp import remote
 from pdp.pdp import PDP, RunReport
-from pdp.pdp_errors import InvalidConfigError
+from pdp.pdp_errors import InvalidConfigError, SlurmUnavailableError
+from pdp.utils import dagster_env
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -312,18 +312,11 @@ def dev(
         err_console.print("Dagster must be installed: `pdp\\[dagster]`.")
         raise typer.Exit(1)
 
-    env = os.environ | {"PDP_PROJECT_ROOT": str(root)}
-    if "DAGSTER_HOME" not in env:
-        env["DAGSTER_HOME"] = str(root / ".dagster")
-        Path(env["DAGSTER_HOME"]).mkdir(exist_ok=True)
-
-    if slurm:
-        if shutil.which("srun") is None:
-            err_console.print(
-                "--slurm needs Slurm's srun on PATH. Run this on a cluster login node"
-            )
-            raise typer.Exit(1)
-        env["PDP_SLURM"] = "1"
+    try:
+        env = os.environ | dagster_env(root, slurm)
+    except SlurmUnavailableError as e:
+        err_console.print(str(e))
+        raise typer.Exit(1)
 
     cmd = [sys.executable, "-m", "dagster", "dev", "-m", "pdp.dagster_defs"]
     if port:

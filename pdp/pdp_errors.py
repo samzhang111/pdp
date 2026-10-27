@@ -4,3 +4,7 @@ class InvalidConfigError(Exception):
 
 class UninitializedProjectError(Exception):
     pass
+
+
+class SlurmUnavailableError(Exception):
+    pass

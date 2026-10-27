@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -147,6 +148,18 @@ def import_and_clean_project(real_pdp):
     write_task_yml("clean", depends_on=["import"])
 
     return real_pdp
+
+
+MOCK_SLURM = Path(__file__).parent / "mock_slurm"
+
+
+@pytest.fixture
+def slurm_log(tmp_path_factory, monkeypatch):
+    """Put mock srun and scancel scripts in tests/mock_slurm/"""
+    log = tmp_path_factory.mktemp("slurm_log")
+    monkeypatch.setenv("MOCK_SLURM_LOG", str(log))
+    monkeypatch.setenv("PATH", f"{MOCK_SLURM}{os.pathsep}{os.environ['PATH']}")
+    return log
 
 
 @pytest.fixture

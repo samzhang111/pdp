@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -17,7 +16,7 @@ from pdp.dagster_assets import (
 )
 from pdp.pdp_errors import InvalidConfigError
 from pdp.slurm_client import PdpSlurmClient
-from tests.helpers import backdate_task_yml, write_task_yml
+from tests.helpers import make_current, write_task_yml
 
 
 def materialize(
@@ -43,16 +42,6 @@ def materializations(result) -> dict[str, dg.AssetMaterialization]:
 
 def ran(materialization) -> bool:
     return materialization.metadata["pdp/ran"].value
-
-
-def make_current(pdp, task_id, depends_on=()):
-    """Valid task with entrypoint task that is current"""
-    task = pdp.create_task(task_id)
-    write_task_yml(task_id, entrypoint="touch output/ran", depends_on=depends_on)
-    backdate_task_yml(task)
-    (task.output_folder / "result.csv").write_text("done")
-    expect(task.is_stale).to(be_false)
-    return task
 
 
 class TestAssetProperties:
@@ -266,6 +255,15 @@ class TestBuildDefinitions:
         with pytest.raises(InvalidConfigError):
             build_definitions(Path.cwd())
 
+    @pytest.mark.parametrize("slurm", [False, True])
+    def test_pdp_run_job_covers_every_task(self, import_and_clean_project, slurm):
+        defs = build_definitions(Path.cwd(), slurm=slurm)
+
+        job = defs.resolve_job_def("pdp_run")
+        expect(job.asset_layer.executable_asset_keys).to(
+            equal({dg.AssetKey("import"), dg.AssetKey("clean")})
+        )
+
     def max_concurrent(self, defs):
         job = defs.resolve_implicit_global_asset_job_def()
         resolved = dg.validate_run_config(job, {})
@@ -289,18 +287,7 @@ class TestBuildDefinitions:
         expect(self.max_concurrent(defs)).to(equal(3))
 
 
-MOCK_SLURM = Path(__file__).parent / "mock_slurm"
-
-
 class TestSlurmClient:
-    @pytest.fixture
-    def slurm_log(self, tmp_path_factory, monkeypatch):
-        """Put mock srun and scancel scripts in tests/mock_slurm/"""
-        log = tmp_path_factory.mktemp("slurm_log")
-        monkeypatch.setenv("MOCK_SLURM_LOG", str(log))
-        monkeypatch.setenv("PATH", f"{MOCK_SLURM}{os.pathsep}{os.environ['PATH']}")
-        return log
-
     @pytest.fixture
     def dagster_home(self, tmp_path_factory, monkeypatch):
         home = tmp_path_factory.mktemp("dagster_home")

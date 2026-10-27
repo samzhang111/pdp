@@ -235,6 +235,7 @@ class PDP:
             task.create_symlinks(all_task_ids)
             if task.run() != 0:
                 report.failed.append(tid)
+                continue
             report.ran.append(tid)
             if latest_mtime_in_dir(task.output_folder) is None:
                 # Empty output = stale task

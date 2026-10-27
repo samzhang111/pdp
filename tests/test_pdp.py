@@ -592,6 +592,7 @@ class TestRunFailureHandling:
         result = import_and_clean_project.run_all()
 
         expect(result.failed).to(equal(["import"]))
+        expect(result.ran).to(equal([]))
         expect(result.skipped).to(equal(["clean", "report"]))
         expect(result.exit_code).to(equal(1))
 

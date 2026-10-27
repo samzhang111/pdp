@@ -31,6 +31,12 @@ When merging to main:
 - `pdp run` refuses to run when a selected task depends on a stale task outside
   the selection. `--allow-stale` runs anyway.
 
+### Changed
+
+- `pdp run` no longer lists failed tasks under "Ran".
+- `pdp dagster dev` writes a `dagster.yaml` that turns off Dagster telemetry
+  when it creates the default `<root>/.dagster`.
+
 ## [0.2.2] - 2026-10-26
 
 ### Added

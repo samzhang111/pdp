@@ -1,5 +1,9 @@
+import os
 import re
+import shutil
 from pathlib import Path
+
+from .pdp_errors import SlurmUnavailableError
 
 TASK_NAME_RULE = "letters and digits, separated by single underscores or dashes"
 _TASK_NAME = re.compile(r"[A-Za-z0-9]+([_-][A-Za-z0-9]+)*")
@@ -38,3 +42,32 @@ def find_project_root(config_name: str, start: Path | None = None) -> Path:
         return current_path
 
     return (start or Path.cwd()).resolve()
+
+
+def dagster_env(project_root: Path, slurm: bool) -> dict[str, str]:
+    """Environment variables `pdp.dagster_defs` and the Slurm client need.
+
+    DAGSTER_HOME defaults to <root>/.dagster, created if missing with a
+    dagster.yaml that turns off Dagster's telemetry. A DAGSTER_HOME that is
+    already set is left alone.
+
+    Raises:
+        SlurmUnavailableError: slurm is set and srun is not on PATH
+    """
+    env = {"PDP_PROJECT_ROOT": str(project_root)}
+    if "DAGSTER_HOME" not in os.environ:
+        home = project_root / ".dagster"
+        home.mkdir(exist_ok=True)
+        config = home / "dagster.yaml"
+        if not config.exists():
+            config.write_text("telemetry:\n  enabled: false\n")
+        env["DAGSTER_HOME"] = str(home)
+
+    if slurm:
+        if shutil.which("srun") is None:
+            raise SlurmUnavailableError(
+                "--slurm needs Slurm's srun on PATH. Run this on a cluster login node"
+            )
+        env["PDP_SLURM"] = "1"
+
+    return env

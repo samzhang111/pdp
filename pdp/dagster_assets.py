@@ -10,6 +10,7 @@ from .slurm_client import PdpSlurmClient
 from .task import Task, latest_mtime_in_dir
 
 DATA_VERSION_TAG = "dagster/data_version"
+RUN_JOB = "pdp_run"
 
 
 class PdpResource(dg.ConfigurableResource):
@@ -28,6 +29,11 @@ def output_data_version(task: Task) -> dg.DataVersion:
         for path, stat in task._output_snapshot().items()
     )
     return dg.DataVersion(hashlib.sha256(repr(snapshot).encode()).hexdigest())
+
+
+def op_name(task_id: str) -> str:
+    """Dagster op and step name for a task. Dagster rejects keywords like 'import'"""
+    return f"task_{task_id.replace('-', '__')}"
 
 
 def build_asset(
@@ -52,7 +58,7 @@ def build_asset(
     # multi asset allows setting name separately from key
     # workaround to avoid 'import', which is not allowed
     @dg.multi_asset(
-        name=f"task_{task_id.replace('-', '__')}",
+        name=op_name(task_id),
         outs={"out": dg.AssetOut(key=dg.AssetKey(task_id))},
         ins={
             f"dep_{i}": dg.AssetIn(key=dg.AssetKey(dep), dagster_type=dg.Nothing)
@@ -182,9 +188,12 @@ def build_definitions(project_root: Path, slurm: bool = False) -> dg.Definitions
         Dagster definitions
     """
     assets = build_assets(load_project(project_root))
+    # Named job for `pdp run`: the implicit asset job can't be reconstructed by name
+    jobs = [dg.define_asset_job(RUN_JOB)]
     if not slurm:
         return dg.Definitions(
             assets=assets,
+            jobs=jobs,
             resources={"pdp": PdpResource(), "pipes": dg.PipesSubprocessClient()},
         )
 
@@ -193,6 +202,7 @@ def build_definitions(project_root: Path, slurm: bool = False) -> dg.Definitions
     max_concurrent = int(os.environ.get("PDP_MAX_CONCURRENT", "8"))
     return dg.Definitions(
         assets=assets,
+        jobs=jobs,
         resources={"pdp": PdpResource(), "pipes": PdpSlurmClient()},
         executor=dg.multiprocess_executor.configured(
             {"max_concurrent": max_concurrent}

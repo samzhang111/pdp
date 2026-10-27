@@ -312,11 +312,30 @@ class TestDagsterCli:
         expect((root / ".dagster").is_dir()).to(be_true)
         expect(result.exit_code).to(equal(0))
 
-    def test_dagster_dev_honors_existing_dagster_home(self, real_pdp, monkeypatch):
-        monkeypatch.setenv("DAGSTER_HOME", "/elsewhere")
+    def test_default_dagster_home_gets_config_without_telemetry(self, real_pdp):
+        run_dagster_dev()
+
+        config = real_pdp.project_root / ".dagster" / "dagster.yaml"
+        expect(config.read_text()).to(equal("telemetry:\n  enabled: false\n"))
+
+    def test_existing_dagster_config_is_kept(self, real_pdp):
+        home = real_pdp.project_root / ".dagster"
+        home.mkdir()
+        (home / "dagster.yaml").write_text("mine: true\n")
+
+        run_dagster_dev()
+
+        expect((home / "dagster.yaml").read_text()).to(equal("mine: true\n"))
+
+    def test_dagster_dev_honors_existing_dagster_home(
+        self, real_pdp, monkeypatch, tmp_path_factory
+    ):
+        elsewhere = tmp_path_factory.mktemp("elsewhere")
+        monkeypatch.setenv("DAGSTER_HOME", str(elsewhere))
         _, popen = run_dagster_dev()
 
-        expect(popen.call_args.kwargs["env"]["DAGSTER_HOME"]).to(equal("/elsewhere"))
+        expect(popen.call_args.kwargs["env"]["DAGSTER_HOME"]).to(equal(str(elsewhere)))
+        expect(list(elsewhere.iterdir())).to(equal([]))
 
     def test_dagster_dev_fails_when_run_outside_project(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
