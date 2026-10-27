@@ -7,6 +7,8 @@ from ruamel.yaml import YAML
 from .pdp_errors import UninitializedProjectError
 from .utils import TASK_NAME_RULE, input_env_var, is_valid_task_name
 
+RUNNERS = ("pdp", "dagster")
+
 
 def requires_initialization(method):
     def wrapper(self, *args, **kwargs):
@@ -125,6 +127,10 @@ class PDPConfig(GenericConfig):
     def slurm(self) -> dict:
         return self.config.get("slurm", {})
 
+    @property
+    def runner(self) -> str:
+        return self.config.get("runner", "pdp")
+
     def validation_errors(self) -> list[str]:
         errors = []
 
@@ -155,6 +161,11 @@ class PDPConfig(GenericConfig):
                 ]
 
         errors += slurm_errors(self.config)
+
+        if self.runner not in RUNNERS:
+            errors.append(
+                f"runner must be one of {', '.join(RUNNERS)}, got {self.runner!r}"
+            )
 
         return errors
 

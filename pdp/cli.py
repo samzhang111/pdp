@@ -3,6 +3,8 @@ import os
 import subprocess
 import sys
 from contextlib import contextmanager
+from datetime import datetime
+from enum import Enum
 from graphlib import TopologicalSorter
 from importlib.metadata import version as pkg_version
 from pathlib import Path
@@ -149,38 +151,100 @@ def validate():
     console.print("Valid.")
 
 
+class Runner(str, Enum):
+    pdp = "pdp"
+    dagster = "dagster"
+
+
+# Selection flags shared by `pdp run` and `pdp remote run`
+TaskIds = Annotated[list[str] | None, typer.Argument()]
+Only = Annotated[
+    bool,
+    typer.Option("--only", help="Run the given task(s) without their upstream(s)."),
+]
+From = Annotated[
+    str | None,
+    typer.Option("--from", help="Run this task and everything downstream of it."),
+]
+To = Annotated[
+    str | None,
+    typer.Option("--to", help="Run this task and everything upstream of it."),
+]
+AllowStale = Annotated[
+    bool,
+    typer.Option(
+        "--allow-stale", help="Run even if a task outside the selection is stale."
+    ),
+]
+Force = Annotated[
+    bool,
+    typer.Option("--force", "-f", help="Run tasks even if they are not stale."),
+]
+
+
+def _require_dagster() -> None:
+    if importlib.util.find_spec("dagster") is None:
+        err_console.print("Dagster must be installed: `pdp\\[dagster]`.")
+        raise typer.Exit(1)
+
+
+def _print_report(report: RunReport) -> None:
+    if report.ran:
+        console.print(f"Ran: {', '.join(report.ran)}")
+    if report.current:
+        console.print(f"Current: {', '.join(report.current)}")
+    if report.no_output:
+        err_console.print(
+            f"Ran but wrote nothing to output/: {', '.join(report.no_output)}"
+        )
+    if report.failed:
+        err_console.print(f"Failed: {', '.join(report.failed)}")
+    if report.no_entrypoint:
+        err_console.print(f"No entrypoint (failed): {', '.join(report.no_entrypoint)}")
+    if report.skipped:
+        err_console.print(f"Skipped (upstream failed): {', '.join(report.skipped)}")
+
+
 @app.command()
 @app.command("r", hidden=True)
 def run(
-    task_ids: Annotated[list[str] | None, typer.Argument()] = None,
-    only: Annotated[
-        bool,
-        typer.Option("--only", help="Run the given task(s) without their upstream(s)."),
-    ] = False,
-    from_: Annotated[
-        str | None,
-        typer.Option("--from", help="Run this task and everything downstream of it."),
+    task_ids: TaskIds = None,
+    only: Only = False,
+    from_: From = None,
+    to: To = None,
+    allow_stale: AllowStale = False,
+    force: Force = False,
+    runner: Annotated[
+        Runner | None,
+        typer.Option(
+            "--runner", help="Run with pdp or Dagster. Default: pdp.yml's runner."
+        ),
     ] = None,
-    to: Annotated[
-        str | None,
-        typer.Option("--to", help="Run this task and everything upstream of it."),
-    ] = None,
-    allow_stale: Annotated[
+    slurm: Annotated[
         bool,
         typer.Option(
-            "--allow-stale", help="Run even if a task outside the selection is stale."
+            "--slurm",
+            help="Run each task as a Slurm job via srun. Implies --runner dagster.",
         ),
     ] = False,
-    force: Annotated[
-        bool,
-        typer.Option("--force", "-f", help="Run tasks even if they are not stale."),
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Show Dagster's logs.")
     ] = False,
 ) -> None:
     """Run tasks and their upstreams by id, or run all tasks if no id given.
 
-    If run from inside a task directory and without ids, runs that task and its upstream."""
+    If run from inside a task directory and without ids, runs that task and its upstream.
+    PDP_SLURM=1 in the environment or .env is the same as --slurm."""
 
     pdp = load_pdp()
+    env = remote.parse_env(pdp.project_root / ".env") | os.environ
+    slurm = slurm or bool(env.get("PDP_SLURM"))
+    if slurm and runner == Runner.pdp:
+        err_console.print("--slurm needs the dagster runner.")
+        raise typer.Exit(1)
+    use_dagster = slurm or (runner or pdp.config.runner) == Runner.dagster
+    if use_dagster:
+        _require_dagster()
 
     try:
         if not (task_ids or from_ or to) and pdp.current_path != Path("."):
@@ -203,29 +267,25 @@ def run(
             )
             raise typer.Exit(1)
 
-        report: RunReport = pdp.run_selection(selection, force)
+        if use_dagster:
+            from pdp.dagster_run import run_dagster
+
+            report = run_dagster(
+                pdp, selection, force=force, slurm=slurm, verbose=verbose
+            )
+        else:
+            report = pdp.run_selection(selection, force)
     except InvalidConfigError as e:
         _exit_validation_failed(e)
+    except SlurmUnavailableError as e:
+        err_console.print(str(e))
+        raise typer.Exit(1)
     except ValueError as e:
         # Bad task id or flags
         err_console.print(str(e))
         raise typer.Exit(1)
 
-    if report.ran:
-        console.print(f"Ran: {', '.join(report.ran)}")
-    if report.current:
-        console.print(f"Current: {', '.join(report.current)}")
-    if report.no_output:
-        err_console.print(
-            f"Ran but wrote nothing to output/: {', '.join(report.no_output)}"
-        )
-    if report.failed:
-        err_console.print(f"Failed: {', '.join(report.failed)}")
-    if report.no_entrypoint:
-        err_console.print(f"No entrypoint (failed): {', '.join(report.no_entrypoint)}")
-    if report.skipped:
-        err_console.print(f"Skipped (upstream failed): {', '.join(report.skipped)}")
-
+    _print_report(report)
     raise typer.Exit(report.exit_code)
 
 
@@ -307,10 +367,7 @@ def dev(
 
     pdp = load_pdp()
     root = pdp.project_root
-
-    if importlib.util.find_spec("dagster") is None:
-        err_console.print("Dagster must be installed: `pdp\\[dagster]`.")
-        raise typer.Exit(1)
+    _require_dagster()
 
     try:
         env = os.environ | dagster_env(root, slurm)
@@ -346,10 +403,19 @@ def _remote_errors():
 
 
 def _load_remote() -> tuple[remote.Remote, Path, str]:
+    """Remote, project root and project name"""
     pdp = load_pdp()
     with _remote_errors():
         cluster = remote.load_remote(pdp.project_root)
-    return cluster, pdp.project_root, remote.session_name(pdp.project_name)
+    return cluster, pdp.project_root, pdp.project_name
+
+
+def _sync_unless_running(cluster: remote.Remote, root: Path, other: str) -> None:
+    """Push, unless the other session is running and could be reading the files"""
+    if remote.has_session(cluster, other):
+        err_console.print(f"Session {other} running, not pushing.")
+    else:
+        remote.sync(cluster, root)
 
 
 @remote_app.command("start")
@@ -360,7 +426,8 @@ def remote_start(
 ) -> None:
     """Push to the cluster in .env, run Dagster there with --slurm in tmux, and tunnel the UI. Reconnects if the session is already running."""
 
-    cluster, root, session = _load_remote()
+    cluster, root, name = _load_remote()
+    session = remote.session_name(name)
     with _remote_errors():
         port_ = str(port or cluster.port)
 
@@ -376,8 +443,10 @@ def remote_start(
                     f"Port {port_} is already in use on {cluster.host}. "
                     "Pick another with -p or PDP_REMOTE_PORT."
                 )
-            remote.sync(cluster, root)
-            remote.start_session(cluster, session, port_)
+            _sync_unless_running(cluster, root, remote.run_session_name(name))
+            remote.start_session(
+                cluster, session, remote.dagster_command(cluster, port_)
+            )
             console.print("Waiting for Dagster...")
             remote.wait_for_dagster(cluster, session, port_)
 
@@ -397,23 +466,96 @@ def remote_start(
 def remote_push() -> None:
     """Push the project to the cluster. output/ is sent only on the first push."""
 
-    cluster, root, session = _load_remote()
+    cluster, root, name = _load_remote()
     with _remote_errors():
-        remote.push(cluster, root, session)
+        remote.push(
+            cluster,
+            root,
+            [remote.session_name(name), remote.run_session_name(name)],
+        )
+
+
+@remote_app.command("run")
+def remote_run(
+    task_ids: TaskIds = None,
+    only: Only = False,
+    from_: From = None,
+    to: To = None,
+    allow_stale: AllowStale = False,
+    force: Force = False,
+    no_push: Annotated[
+        bool, typer.Option("--no-push", help="Run without pushing first.")
+    ] = False,
+) -> None:
+    """Run tasks on the cluster with --slurm in tmux and stream the log. Takes the same selection flags as `pdp run`. Reattaches if a run is in progress."""
+
+    cluster, root, name = _load_remote()
+    session = remote.run_session_name(name)
+    # The selection is checked by `pdp run` on the cluster, where staleness is true
+    args = list(task_ids or [])
+    if only:
+        args.append("--only")
+    if from_:
+        args += ["--from", from_]
+    if to:
+        args += ["--to", to]
+    if allow_stale:
+        args.append("--allow-stale")
+    if force:
+        args.append("--force")
+
+    with _remote_errors():
+        if remote.has_session(cluster, session):
+            err_console.print(
+                f"Run already in progress, attaching; args ignored ({session})."
+            )
+        else:
+            remote.check_uvx(cluster)
+            if not no_push:
+                _sync_unless_running(cluster, root, remote.session_name(name))
+            remote.start_session(cluster, session, remote.run_command(cluster, args))
+
+        try:
+            interrupted = remote.stream(cluster, session).returncode != 0
+        except KeyboardInterrupt:
+            interrupted = True
+
+        if interrupted:
+            console.print(
+                f"Run continues on {cluster.host}; "
+                "`pdp remote run` to reattach, `pdp remote status` to check.",
+                markup=False,
+            )
+            raise typer.Exit(0)
+
+        result = remote.last_run(cluster)
+
+    if result is None:
+        err_console.print(
+            "Run ended without a report. The log above shows why, "
+            f"it is also in {remote.RUN_LOG} on {cluster.host}.",
+            markup=False,
+        )
+        raise typer.Exit(1)
+
+    console.print("`pdp remote pull` to fetch output.", markup=False)
+    raise typer.Exit(result["exit_code"])
 
 
 @remote_app.command("pull")
 def remote_pull(
     force: Annotated[
         bool,
-        typer.Option("--force", "-f", help="Pull even while pdp jobs are running."),
+        typer.Option(
+            "--force", "-f", help="Pull even while a run or pdp jobs are running."
+        ),
     ] = False,
 ) -> None:
     """Pull every task's output/ back from the cluster."""
 
-    cluster, root, _ = _load_remote()
+    cluster, root, name = _load_remote()
     with _remote_errors():
-        remote.pull(cluster, root, force)
+        remote.pull(cluster, root, remote.run_session_name(name), force)
 
 
 @remote_app.command("status")
@@ -421,7 +563,8 @@ def remote_pull(
 def remote_status() -> None:
     """Show the remote config, if the project exists on remote, and what is running there."""
 
-    cluster, _, session = _load_remote()
+    cluster, _, name = _load_remote()
+    session = remote.session_name(name)
     console.print()
     console.print(f"host:     {cluster.host}", markup=False)
     console.print(f"path:     {cluster.path}", markup=False, highlight=False)
@@ -442,6 +585,19 @@ def remote_status() -> None:
             f"session:  {session} {'[blue]running[/]' if running else '[red]not running[/]'}"
         )
 
+        if remote.has_session(cluster, remote.run_session_name(name)):
+            run = "[blue]running[/]"
+        elif last := remote.last_run(cluster):
+            finished = datetime.fromisoformat(last["finished"])
+            failed = len(last["failed"]) + len(last["no_entrypoint"])
+            run = (
+                f"finished {finished:%Y-%m-%d %H:%M}, "
+                f"ran {len(last['ran'])}, failed {failed}"
+            )
+        else:
+            run = "none"
+        console.print(f"run:      {run}", highlight=False)
+
         if remote.port_open(cluster, cluster.port):
             console.print(
                 f"dagster: listening on {cluster.port} (tunnel: pdp remote start)"
@@ -461,13 +617,14 @@ def remote_status() -> None:
 
 @remote_app.command("stop")
 def remote_stop() -> None:
-    """Stop the remote Dagster session and cancel pdp's Slurm jobs."""
+    """Stop the remote Dagster and run sessions and cancel pdp's Slurm jobs."""
 
-    cluster, _, session = _load_remote()
+    cluster, _, name = _load_remote()
+    sessions = [remote.session_name(name), remote.run_session_name(name)]
     with _remote_errors():
-        killed, job_ids = remote.stop(cluster, session)
+        killed, job_ids = remote.stop(cluster, sessions)
 
-    if killed:
+    for session in killed:
         console.print(f"Stopped session {session} on {cluster.host}.", markup=False)
     if job_ids:
         console.print(f"Cancelled Slurm jobs: {', '.join(job_ids)}")

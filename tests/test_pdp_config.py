@@ -199,3 +199,23 @@ class TestSlurmConfig:
         expect(TaskConfig("task1", "task.yml").validation_errors()).to(
             contain(contain("slurm should be a mapping"), contain("got list"))
         )
+
+
+class TestRunnerConfig:
+    @pytest.mark.parametrize(
+        "yml, runner", [({}, "pdp"), ({"runner": "dagster"}, "dagster")]
+    )
+    def test_runner_is_read_from_pdp_yml_and_defaults_to_pdp(self, fs, yml, runner):
+        write_config_file("pdp.yml", {"name": "test", "tasks": [], **yml})
+
+        pdp_config = PDPConfig("test", "pdp.yml")
+
+        expect(pdp_config.runner).to(equal(runner))
+        expect(pdp_config.validation_errors()).to(equal([]))
+
+    def test_unknown_runner_is_rejected(self, fs):
+        write_config_file("pdp.yml", {"name": "test", "tasks": [], "runner": "banana"})
+
+        expect(PDPConfig("test", "pdp.yml").validation_errors()).to(
+            equal(["runner must be one of pdp, dagster, got 'banana'"])
+        )

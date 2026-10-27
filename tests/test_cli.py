@@ -10,7 +10,24 @@ from ruamel.yaml import YAML
 from typer.testing import CliRunner
 
 from pdp.cli import app
+from pdp.pdp import RunReport
 from tests.helpers import backdate_task_yml, write_task_yml
+
+
+@pytest.fixture(autouse=True)
+def no_slurm_env(monkeypatch):
+    """PDP_SLURM in the developer's shell would send `pdp run` to Dagster"""
+    monkeypatch.delenv("PDP_SLURM", raising=False)
+
+
+@pytest.fixture
+def stale_dag(dag_project):
+    """import -> clean -> report, plus other. All stale, each touches output/ran"""
+    for task in dag_project.tasks:
+        write_task_yml(
+            task.task_id, entrypoint="touch output/ran", depends_on=task.depends_on
+        )
+    return dag_project
 
 
 @pytest.fixture
@@ -211,15 +228,6 @@ class TestRunCli:
 
 
 class TestRunSelection:
-    @pytest.fixture
-    def project(self, dag_project):
-        """import -> clean -> report, plus other. All stale, each touches output/ran"""
-        for task in dag_project.tasks:
-            write_task_yml(
-                task.task_id, entrypoint="touch output/ran", depends_on=task.depends_on
-            )
-        return dag_project
-
     def tasks_that_ran(self, project):
         return {t.task_id for t in project.tasks if (t.output_folder / "ran").exists()}
 
@@ -232,17 +240,17 @@ class TestRunSelection:
             (["clean", "--only", "--allow-stale"], {"clean"}),
         ],
     )
-    def test_runs_selection(self, project, args, ran):
+    def test_runs_selection(self, stale_dag, args, ran):
         result = CliRunner(mix_stderr=False).invoke(app, ["run", *args])
 
         expect(result.exit_code).to(equal(0))
-        expect(self.tasks_that_ran(project)).to(equal(ran))
+        expect(self.tasks_that_ran(stale_dag)).to(equal(ran))
 
     @pytest.mark.parametrize(
         "args",
         [["clean", "--only"], ["--from", "clean"], ["clean", "--only", "--force"]],
     )
-    def test_refuses_stale_upstream(self, project, args):
+    def test_refuses_stale_upstream(self, stale_dag, args):
         result = CliRunner(mix_stderr=False).invoke(app, ["run", *args])
 
         expect(result.exit_code).to(equal(1))
@@ -250,15 +258,112 @@ class TestRunSelection:
             contain("Stale upstream outside the selection: import")
         )
         expect(result.stderr).to(contain("--allow-stale"))
-        expect(self.tasks_that_ran(project)).to(equal(set()))
+        expect(self.tasks_that_ran(stale_dag)).to(equal(set()))
 
-    def test_bad_selection_prints_error(self, project):
+    @pytest.mark.usefixtures("stale_dag")
+    def test_bad_selection_prints_error(self):
         result = CliRunner(mix_stderr=False).invoke(
             app, ["run", "clean", "--from", "import"]
         )
 
         expect(result.exit_code).to(equal(1))
         expect(result.stderr).to(contain("--from/--to"))
+
+
+@pytest.mark.usefixtures("stale_dag")
+class TestRunner:
+    def invoke_run(self, *args, report=None):
+        with patch(
+            "pdp.dagster_run.run_dagster", return_value=report or RunReport()
+        ) as run_dagster:
+            result = CliRunner(mix_stderr=False).invoke(app, ["run", *args])
+        return result, run_dagster
+
+    def test_pdp_yml_runner_sends_run_to_dagster(self, stale_dag):
+        stale_dag.config.update_config_key("runner", "dagster")
+
+        result, run_dagster = self.invoke_run("clean")
+
+        expect(result.exit_code).to(equal(0))
+        run_dagster.assert_called_once_with(
+            ANY, {"import", "clean"}, force=False, slurm=False, verbose=False
+        )
+
+    def test_runner_flag_overrides_pdp_yml(self, stale_dag):
+        stale_dag.config.update_config_key("runner", "dagster")
+
+        result, run_dagster = self.invoke_run("--runner", "pdp", "clean")
+
+        expect(result.exit_code).to(equal(0))
+        run_dagster.assert_not_called()
+        expect(Path("clean/output/ran").exists()).to(be_true)
+
+    def test_default_runner_is_pdp(self):
+        _, run_dagster = self.invoke_run()
+
+        run_dagster.assert_not_called()
+
+    @pytest.mark.parametrize("flag, kwarg", [("--force", "force"), ("-v", "verbose")])
+    def test_flags_reach_dagster(self, flag, kwarg):
+        _, run_dagster = self.invoke_run("--runner", "dagster", flag)
+
+        expect(run_dagster.call_args.kwargs[kwarg]).to(be_true)
+
+    @pytest.mark.parametrize(
+        "args, env_file",
+        [(["--slurm"], ""), ([], "PDP_SLURM=1\n")],
+        ids=["flag", "env_file"],
+    )
+    def test_slurm_mode_uses_dagster_with_slurm(self, args, env_file):
+        Path(".env").write_text(env_file)
+
+        result, run_dagster = self.invoke_run(*args)
+
+        expect(result.exit_code).to(equal(0))
+        expect(run_dagster.call_args.kwargs["slurm"]).to(be_true)
+
+    def test_slurm_with_pdp_runner_is_refused(self):
+        result, run_dagster = self.invoke_run("--runner", "pdp", "--slurm")
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(contain("--slurm needs the dagster runner"))
+        run_dagster.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "args, selection",
+        [
+            (["import", "other", "--only"], {"import", "other"}),
+            (["--from", "clean", "--allow-stale"], {"clean", "report"}),
+        ],
+    )
+    def test_selection_reaches_dagster(self, args, selection):
+        _, run_dagster = self.invoke_run("--runner", "dagster", *args)
+
+        expect(run_dagster.call_args.args[1]).to(equal(selection))
+
+    def test_stale_upstream_refused_before_dagster(self):
+        result, run_dagster = self.invoke_run("--runner", "dagster", "clean", "--only")
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(contain("Stale upstream"))
+        run_dagster.assert_not_called()
+
+    def test_dagster_report_is_printed_with_its_exit_code(self):
+        report = RunReport(ran=["import"], failed=["clean"])
+
+        result, _ = self.invoke_run("--runner", "dagster", report=report)
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stdout).to(contain("Ran: import"))
+        expect(result.stderr).to(contain("Failed: clean"))
+
+    def test_dagster_runner_needs_dagster(self):
+        with patch("importlib.util.find_spec", return_value=None):
+            result, run_dagster = self.invoke_run("--runner", "dagster")
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(contain("Dagster must be installed: `pdp[dagster]`"))
+        run_dagster.assert_not_called()
 
 
 class TestTreeCli:

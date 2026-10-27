@@ -1,5 +1,6 @@
 """Remote: push the project to a cluster login node, run Dagster there in tmux, pull outputs back."""
 
+import json
 import os
 import shlex
 import subprocess
@@ -18,6 +19,8 @@ SSH_OPTS = [
 ]
 PUSH_EXCLUDES = [".dagster/", ".git/", ".venv/", ".env"]
 OUTPUT_EXCLUDE = "/*/output/"
+RUN_LOG = ".dagster/last-run.log"
+LAST_RUN = ".dagster/last-run.json"
 
 ENV_EXAMPLE = """\
 # .env
@@ -102,8 +105,18 @@ def session_name(project_name: str) -> str:
     return f"pdp-{project_name}"
 
 
+def run_session_name(project_name: str) -> str:
+    """Name of tmux session for `pdp remote run`"""
+    return f"pdp-{project_name}-run"
+
+
+def _target(session: str) -> str:
+    """tmux target for exactly this session. A bare -t name matches by prefix"""
+    return shlex.quote(f"={session}")
+
+
 def has_session(remote: Remote, session: str) -> bool:
-    cmd = f"tmux has-session -t {shlex.quote(session)}"
+    cmd = f"tmux has-session -t {_target(session)}"
     return remote.ssh(cmd, capture_output=True).returncode == 0
 
 
@@ -141,9 +154,12 @@ def sync(remote: Remote, root: Path) -> None:
     remote.rsync(push_args(root, remote.target, send_output=not exists(remote)))
 
 
-def push(remote: Remote, root: Path, session: str) -> None:
-    if has_session(remote, session):
-        raise RemoteError("session running, not pushing; pdp remote stop first")
+def push(remote: Remote, root: Path, sessions: list[str]) -> None:
+    for session in sessions:
+        if has_session(remote, session):
+            raise RemoteError(
+                f"session {session} running, not pushing; pdp remote stop first"
+            )
     sync(remote, root)
 
 
@@ -154,12 +170,45 @@ def dagster_command(remote: Remote, port: str) -> str:
     )
 
 
-def start_session(remote: Remote, session: str, port: str) -> None:
-    dagster = dagster_command(remote, port)
+def run_command(remote: Remote, args: list[str]) -> str:
+    """`pdp run --slurm` on the cluster, logging to RUN_LOG"""
+    pdp_run = shlex.join(["pdp", "run", "--slurm", *args])
+    return (
+        f"cd {remote.path} && mkdir -p .dagster && rm -f {LAST_RUN} && "
+        f"uvx --from {shlex.quote(remote.spec)} {pdp_run} > {RUN_LOG} 2>&1"
+    )
+
+
+def start_session(remote: Remote, session: str, cmd: str) -> None:
     remote.ssh(
-        f"tmux new-session -d -s {shlex.quote(session)} {shlex.quote(dagster)}",
+        f"tmux new-session -d -s {shlex.quote(session)} {shlex.quote(cmd)}",
         check=True,
     )
+
+
+def stream(remote: Remote, session: str) -> subprocess.CompletedProcess:
+    """Print the run log until the session ends.
+
+    Ctrl-C ends only the stream, the run keeps going in tmux. The tty (-t)
+    hangs up the remote tail and loop when the connection ends."""
+    cmd = (
+        f"tail -n +1 -F {remote.path}/{RUN_LOG} & "
+        f"while tmux has-session -t {_target(session)} 2>/dev/null; do sleep 2; done; "
+        # let tail print the last lines
+        "sleep 1; kill $!"
+    )
+    return subprocess.run(["ssh", *SSH_OPTS, "-t", remote.host, cmd], check=False)
+
+
+def last_run(remote: Remote) -> dict | None:
+    """Report of the last `pdp run` under Dagster on the cluster, if any"""
+    out = remote.ssh(f"cat {remote.path}/{LAST_RUN}", capture_output=True, text=True)
+    if out.returncode != 0:
+        return None
+    try:
+        return json.loads(out.stdout)
+    except ValueError:
+        return None
 
 
 def port_open(remote: Remote, port: str) -> bool:
@@ -203,9 +252,13 @@ def pdp_job_ids(remote: Remote) -> list[str]:
     return [job_id for job_id, name in jobs if name.startswith("pdp-")]
 
 
-def stop(remote: Remote, session: str) -> tuple[bool, list[str]]:
-    """Kill tmux session on remote. Returns whether it was killed and cancelled job ids"""
-    killed = remote.ssh(f"tmux kill-session -t {shlex.quote(session)}").returncode == 0
+def stop(remote: Remote, sessions: list[str]) -> tuple[list[str], list[str]]:
+    """Kill tmux sessions on remote. Returns the sessions killed and cancelled job ids"""
+    killed = [
+        session
+        for session in sessions
+        if remote.ssh(f"tmux kill-session -t {_target(session)}").returncode == 0
+    ]
     # scancel --name matches exact names only, so cancel pdp's jobs by id
     job_ids = pdp_job_ids(remote)
     if job_ids:
@@ -230,8 +283,9 @@ def pull_args(src: str, root: Path) -> list[str]:
     ]
 
 
-def pull(remote: Remote, root: Path, force: bool) -> None:
-    if not force and pdp_job_ids(remote):
+def pull(remote: Remote, root: Path, run_session: str, force: bool) -> None:
+    # Between two tasks of a run there may be no job queued
+    if not force and (has_session(remote, run_session) or pdp_job_ids(remote)):
         raise RemoteError(
             "jobs still running, output may be partial; --force to pull anyway"
         )

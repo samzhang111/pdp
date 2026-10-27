@@ -108,6 +108,11 @@ Select which tasks to run (`import -> clean -> analyze`):
 | `pdp run --from import --to analyze`  | Every task on a path from `import` to `analyze` |
 | `pdp run --to clean`                  | Same as `pdp run clean`                         |
 
+Several IDs run the union of their selections, so `pdp run import other --only`
+runs both alone. If a selected task depends on a stale task outside the
+selection, `pdp run` refuses and suggests `--from <task>`. Add `--allow-stale`
+to run anyway.
+
 
 ### Run with Dagster
 
@@ -116,6 +121,10 @@ Select which tasks to run (`import -> clean -> analyze`):
 - Tasks from PDP are generated as Dagster assets. Observations are used to
   record events so that changes to outputs outside of Dagster are properly
   recognized.
+- Run `pdp run --runner dagster` to run a selection through Dagster without the
+  UI, or set `runner: dagster` in `pdp.yml` to make it the default. It prints the
+  same summary as `pdp run`. Add `-v` to see Dagster's logs. Runs show up in the
+  UI's run list later.
 
 ### Run with Dagster-Slurm
 
@@ -128,6 +137,9 @@ Select which tasks to run (`import -> clean -> analyze`):
   be able to access those datasets during runtime.
 - Run `pdp dagster dev --slurm` to run the project with each task as a Slurm
   job.
+- Run `pdp run --slurm` (with any selection flags) to do the same without the
+  UI. `--slurm` implies `--runner dagster`. Setting `PDP_SLURM=1` in the
+  environment or `.env` has the same effect.
 
 ```yaml
 # pdp.yml
@@ -180,11 +192,23 @@ To run the project:
   - Closing your terminal only closes the tunnel - the tmux sesion will persist
     on the cluster.
   - Run `pdp remote start` again to reconnect to the session.
-- `pdp remote push` syncs the project to the cluster.
+- `pdp remote run` runs `pdp run --slurm` on the cluster, without the UI, in a
+  tmux session called `pdp-<project-name>-run`, and streams its log. It takes
+  the same selection flags as `pdp run`.
+  - It pushes first, unless the `remote start` session is running or you pass
+    `--no-push`.
+  - Ctrl-C or a dropped connection ends only the stream. The run keeps going.
+    Run `pdp remote run` again to reattach.
+  - It exits with the run's exit code. Then use `pdp remote pull` to fetch the
+    output.
+- `pdp remote status` shows whether a run is in progress, or the last run's
+  result.
+- `pdp remote push` syncs the project to the cluster, unless either session is
+  running. `pdp remote start` also skips the push while a run is in progress.
 - `pdp remote pull` pulls each task's `output/` from the cluster back to your
-  local machine. It refuses while jobs are still running, but can be interrupted
-  with `--force`.
-- `pdp remote stop` ends the tmux session and cancels PDP's remaining Slurm
+  local machine. It refuses while a run or jobs are still running, but can be
+  interrupted with `--force`.
+- `pdp remote stop` ends both tmux sessions and cancels PDP's remaining Slurm
   jobs.
 
 #### From the Cluster

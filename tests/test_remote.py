@@ -1,3 +1,4 @@
+import json
 import os
 import shlex
 import subprocess
@@ -36,11 +37,14 @@ def remote_project(real_pdp):
 
 def fake_run(
     session=False,
+    run_session=False,
     remote_has_pdp=True,
     squeue="",
     ports=(False, True),
     uvx=True,
     reachable=True,
+    last_run=None,
+    stream_rc=0,
 ):
     """Patch subprocess.run, answer ssh commands, record every argv"""
     port_answers = list(ports)
@@ -48,10 +52,14 @@ def fake_run(
     def run(argv, **kwargs):
         cmd = argv[-1]
         rc = 0
+        stdout = ""
         if not reachable:
             rc = 255
+        elif cmd.startswith("tail "):
+            rc = stream_rc
         elif "has-session" in cmd:
-            rc = 0 if session else 1
+            up = run_session if cmd.endswith("-run") else session
+            rc = 0 if up else 1
         elif "/dev/tcp/" in cmd:
             is_open = port_answers.pop(0) if len(port_answers) > 1 else port_answers[0]
             rc = 0 if is_open else 1
@@ -59,7 +67,11 @@ def fake_run(
             rc = 0 if remote_has_pdp else 1
         elif cmd == "command -v uvx":
             rc = 0 if uvx else 1
-        stdout = squeue if cmd.startswith("squeue") else ""
+        elif cmd.startswith("squeue"):
+            stdout = squeue
+        elif cmd.startswith("cat "):
+            rc = 1 if last_run is None else 0
+            stdout = json.dumps(last_run)
         return subprocess.CompletedProcess(argv, rc, stdout=stdout)
 
     return patch("subprocess.run", side_effect=run)
@@ -88,6 +100,11 @@ def first(run, program):
 
 def pushed_or_pulled(run):
     return any(a[0] == "rsync" for a in argvs(run))
+
+
+def programs(run):
+    """First word of each remote command, or rsync"""
+    return [a[0] if a[0] == "rsync" else a[-1].split()[0] for a in argvs(run)]
 
 
 class TestLoadRemote:
@@ -204,12 +221,17 @@ class TestPushRsync:
 
 
 class TestPush:
+    @pytest.mark.parametrize(
+        "running, session",
+        [({"session": True}, "pdp-test"), ({"run_session": True}, "pdp-test-run")],
+    )
     @pytest.mark.usefixtures("remote_project")
-    def test_refuses_while_session_runs(self):
-        with fake_run(session=True) as run:
+    def test_refuses_while_either_session_runs(self, running, session):
+        with fake_run(**running) as run:
             result = invoke("remote", "push")
 
         expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(contain(f"session {session} running"))
         expect(pushed_or_pulled(run)).to(be_false)
 
     @pytest.mark.parametrize(
@@ -241,18 +263,18 @@ class TestRemoteStart:
             result = invoke("remote", "start")
 
         expect(result.exit_code).to(equal(0))
-        programs = [a[0] if a[0] == "rsync" else a[-1].split()[0] for a in argvs(run)]
-        expect(programs).to(
+        expect(programs(run)).to(
             equal(
                 [
-                    "tmux",
-                    "command",
-                    "bash",
-                    "test",
+                    "tmux",  # dagster session?
+                    "command",  # uvx?
+                    "bash",  # port free?
+                    "tmux",  # run session?
+                    "test",  # pushed before?
                     "rsync",
-                    "tmux",
-                    "bash",
-                    "me@login1",
+                    "tmux",  # new-session
+                    "bash",  # dagster listening?
+                    "me@login1",  # tunnel
                 ]
             )
         )
@@ -268,7 +290,7 @@ class TestRemoteStart:
             result = invoke("remote", "start")
 
         expect(result.exit_code).to(equal(0))
-        expect(remote_cmds(run)).to(equal(["tmux has-session -t pdp-test"]))
+        expect(remote_cmds(run)).to(equal(["tmux has-session -t =pdp-test"]))
         expect(pushed_or_pulled(run)).to(be_false)
         expect(argvs(run)[-1]).to(contain("-N"))
 
@@ -298,10 +320,14 @@ class TestRemoteStart:
 
     @pytest.mark.usefixtures("remote_project")
     def test_waits_until_dagster_listens(self):
-        with fake_run(ports=(False, False, False, True)) as run, patch("time.sleep"):
-            # the session is alive while Dagster starts
-            with patch("pdp.remote.has_session", side_effect=[False, True, True]):
-                result = invoke("remote", "start")
+        # neither session runs at first, then Dagster's is alive while it starts
+        sessions = [False, False, True, True]
+        with (
+            fake_run(ports=(False, False, False, True)) as run,
+            patch("time.sleep"),
+            patch("pdp.remote.has_session", side_effect=sessions),
+        ):
+            result = invoke("remote", "start")
 
         expect(result.exit_code).to(equal(0))
         port_checks = [c for c in remote_cmds(run) if "/dev/tcp/" in c]
@@ -344,7 +370,7 @@ class TestStop:
         ],
     )
     @pytest.mark.usefixtures("remote_project")
-    def test_kills_session_then_cancels_only_pdp_jobs(self, squeue, cancel):
+    def test_kills_both_sessions_then_cancels_only_pdp_jobs(self, squeue, cancel):
         with fake_run(squeue=squeue) as run:
             result = invoke("remote", "stop")
 
@@ -352,13 +378,19 @@ class TestStop:
         expect(remote_cmds(run)).to(
             equal(
                 [
-                    "tmux kill-session -t pdp-test",
+                    "tmux kill-session -t =pdp-test",
+                    "tmux kill-session -t =pdp-test-run",
                     "squeue --me -h -o '%i %j'",
                     *cancel,
                 ]
             )
         )
-        expect(result.stdout).to(contain("Stopped session pdp-test on me@login1"))
+        expect(result.stdout).to(
+            contain(
+                "Stopped session pdp-test on me@login1",
+                "Stopped session pdp-test-run on me@login1",
+            )
+        )
         expect("Cancelled Slurm jobs: 11, 13" in result.stdout).to(equal(bool(cancel)))
 
 
@@ -427,20 +459,172 @@ def test_pull_rsync_brings_back_only_output(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "squeue, flags, refuses",
+    "running, flags, refuses",
     [
-        ("11 pdp-run1-import\n", [], True),
-        ("11 pdp-run1-import\n", ["--force"], False),
-        ("12 my-other-job\n", [], False),
+        ({"squeue": "11 pdp-run1-import\n"}, [], True),
+        ({"squeue": "11 pdp-run1-import\n"}, ["--force"], False),
+        ({"squeue": "12 my-other-job\n"}, [], False),
+        ({"run_session": True}, [], True),
+        ({"run_session": True}, ["--force"], False),
     ],
-    ids=["pdp_job_blocks", "force", "other_job_ignored"],
+    ids=[
+        "pdp_job_blocks",
+        "force_past_job",
+        "other_job_ignored",
+        "run_session_blocks",
+        "force_past_run",
+    ],
 )
 @pytest.mark.usefixtures("remote_project")
-def test_pull_refuses_only_while_pdp_jobs_run(squeue, flags, refuses):
-    with fake_run(squeue=squeue) as run:
+def test_pull_refuses_while_a_run_or_pdp_jobs_are_running(running, flags, refuses):
+    with fake_run(**running) as run:
         result = invoke("remote", "pull", *flags)
 
     expect(result.exit_code).to(equal(1 if refuses else 0))
     pulls = [a[-2:] for a in argvs(run) if a[0] == "rsync"]
     expected = [] if refuses else [["me@login1:/gpfs/proj/", f"{Path.cwd()}/"]]
     expect(pulls).to(equal(expected))
+
+
+def run_cmd(*args):
+    pdp_run = shlex.join(["pdp", "run", "--slurm", *args])
+    return (
+        "cd /gpfs/proj && mkdir -p .dagster && rm -f .dagster/last-run.json && "
+        f"uvx --from '{SPEC}' {pdp_run} > .dagster/last-run.log 2>&1"
+    )
+
+
+REPORT = {"ran": ["a"], "failed": [], "no_entrypoint": [], "exit_code": 0}
+
+
+@pytest.mark.parametrize(
+    "command, running, other",
+    [
+        ("start", {"run_session": True}, "pdp-test-run"),
+        ("run", {"session": True}, "pdp-test"),
+    ],
+)
+@pytest.mark.usefixtures("remote_project")
+def test_start_and_run_skip_push_while_the_other_session_runs(command, running, other):
+    with fake_run(last_run=REPORT, **running) as run:
+        result = invoke("remote", command)
+
+    expect(result.stderr).to(contain(f"Session {other} running, not pushing"))
+    expect(pushed_or_pulled(run)).to(be_false)
+    expect(remote_cmds(run)).to(contain(contain("new-session")))
+
+
+@pytest.mark.usefixtures("remote_project")
+class TestRemoteRun:
+    def test_checks_uvx_pushes_starts_run_then_streams(self):
+        with fake_run(last_run=REPORT) as run:
+            result = invoke("remote", "run", "--from", "clean")
+
+        expect(result.exit_code).to(equal(0))
+        expect(programs(run)).to(
+            equal(
+                [
+                    "tmux",  # run session?
+                    "command",  # uvx?
+                    "tmux",  # dagster session?
+                    "test",  # pushed before?
+                    "rsync",
+                    "tmux",  # new-session
+                    "tail",  # stream
+                    "cat",  # last-run.json
+                ]
+            )
+        )
+        expect(shlex.split(session_cmd(run))[-1]).to(equal(run_cmd("--from", "clean")))
+        stream = next(a for a in argvs(run) if a[-1].startswith("tail "))
+        expect(stream).to(contain("-t"))
+        expect(stream[-1]).to(
+            contain(
+                "tail -n +1 -F /gpfs/proj/.dagster/last-run.log",
+                "tmux has-session -t =pdp-test-run",
+            )
+        )
+        expect(result.stdout).to(contain("pdp remote pull"))
+
+    def test_no_push(self):
+        with fake_run(last_run=REPORT) as run:
+            result = invoke("remote", "run", "--no-push")
+
+        expect(result.exit_code).to(equal(0))
+        expect(pushed_or_pulled(run)).to(be_false)
+        expect(shlex.split(session_cmd(run))[-1]).to(equal(run_cmd()))
+
+    def test_run_in_progress_attaches_and_ignores_args(self):
+        with fake_run(run_session=True, last_run=REPORT) as run:
+            result = invoke("remote", "run", "clean")
+
+        expect(result.exit_code).to(equal(0))
+        expect(result.stderr).to(contain("attaching; args ignored"))
+        expect(programs(run)).to(equal(["tmux", "tail", "cat"]))
+
+    def test_exits_with_the_runs_exit_code(self):
+        with fake_run(last_run=REPORT | {"failed": ["a"], "exit_code": 1}):
+            result = invoke("remote", "run")
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stdout).to(contain("pdp remote pull"))
+
+    def test_missing_report_points_at_the_log(self):
+        with fake_run():
+            result = invoke("remote", "run")
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(
+            contain("Run ended without a report", ".dagster/last-run.log on me@login1")
+        )
+
+    def test_dropped_connection_leaves_run_going(self):
+        with fake_run(stream_rc=255, last_run=REPORT):
+            result = invoke("remote", "run")
+
+        expect(result.exit_code).to(equal(0))
+        expect(result.stdout).to(contain("Run continues on me@login1"))
+
+    def test_ctrl_c_leaves_run_going(self):
+        with (
+            fake_run(last_run=REPORT),
+            patch("pdp.remote.stream", side_effect=KeyboardInterrupt),
+        ):
+            result = invoke("remote", "run")
+
+        expect(result.exit_code).to(equal(0))
+        expect(result.stdout).to(contain("Run continues on me@login1"))
+
+    def test_selection_args_are_quoted(self):
+        with fake_run(last_run=REPORT) as run:
+            invoke("remote", "run", "a b", "it's", "--only")
+
+        expect(shlex.split(session_cmd(run))[-1]).to(
+            equal(run_cmd("a b", "it's", "--only"))
+        )
+
+
+@pytest.mark.usefixtures("remote_project")
+class TestStatusRun:
+    def status(self, **state):
+        with fake_run(ports=(False,), **state):
+            return invoke("remote", "status")
+
+    def test_running(self):
+        expect(self.status(run_session=True).stdout).to(contain("run:      running"))
+
+    def test_last_result(self):
+        last = {
+            "ran": ["a", "b", "c"],
+            "failed": ["d"],
+            "no_entrypoint": ["e"],
+            "exit_code": 1,
+            "finished": "2026-10-27T14:02:31",
+        }
+
+        expect(self.status(last_run=last).stdout).to(
+            contain("run:      finished 2026-10-27 14:02, ran 3, failed 2")
+        )
+
+    def test_none(self):
+        expect(self.status().stdout).to(contain("run:      none"))
