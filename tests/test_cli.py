@@ -210,6 +210,57 @@ class TestRunCli:
         expect(result.stdout).to(contain("Ran: import, clean"))
 
 
+class TestRunSelection:
+    @pytest.fixture
+    def project(self, dag_project):
+        """import -> clean -> report, plus other. All stale, each touches output/ran"""
+        for task in dag_project.tasks:
+            write_task_yml(
+                task.task_id, entrypoint="touch output/ran", depends_on=task.depends_on
+            )
+        return dag_project
+
+    def tasks_that_ran(self, project):
+        return {t.task_id for t in project.tasks if (t.output_folder / "ran").exists()}
+
+    @pytest.mark.parametrize(
+        "args, ran",
+        [
+            (["import", "other", "--only"], {"import", "other"}),
+            (["--from", "import"], {"import", "clean", "report"}),
+            (["--to", "clean"], {"import", "clean"}),
+            (["clean", "--only", "--allow-stale"], {"clean"}),
+        ],
+    )
+    def test_runs_selection(self, project, args, ran):
+        result = CliRunner(mix_stderr=False).invoke(app, ["run", *args])
+
+        expect(result.exit_code).to(equal(0))
+        expect(self.tasks_that_ran(project)).to(equal(ran))
+
+    @pytest.mark.parametrize(
+        "args",
+        [["clean", "--only"], ["--from", "clean"], ["clean", "--only", "--force"]],
+    )
+    def test_refuses_stale_upstream(self, project, args):
+        result = CliRunner(mix_stderr=False).invoke(app, ["run", *args])
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(
+            contain("Stale upstream outside the selection: import")
+        )
+        expect(result.stderr).to(contain("--allow-stale"))
+        expect(self.tasks_that_ran(project)).to(equal(set()))
+
+    def test_bad_selection_prints_error(self, project):
+        result = CliRunner(mix_stderr=False).invoke(
+            app, ["run", "clean", "--from", "import"]
+        )
+
+        expect(result.exit_code).to(equal(1))
+        expect(result.stderr).to(contain("--from/--to"))
+
+
 class TestTreeCli:
     def test_tree_enumerates_tasks_as_flat_list(self, runner, fs):
         _ = runner.invoke(app, ["create", "hello", "world"])

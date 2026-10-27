@@ -10,6 +10,18 @@ from .task import Task, latest_mtime_in_dir
 from .utils import TASK_NAME_RULE, find_project_root, is_valid_task_name
 
 
+def _reach(edges: dict[str, list[str]], start: str) -> set[str]:
+    """start plus every node reachable from it along edges."""
+    touched = set()
+    stack = [start]
+    while stack:
+        current = stack.pop()
+        if current not in touched:
+            touched.add(current)
+            stack.extend(edges[current])
+    return touched
+
+
 @dataclass
 class RunReport:
     """Results of running each task in scope, if not cleanly exited.
@@ -138,22 +150,67 @@ class PDP:
         Returns:
             A set of every task_id in scope
         """
-        touched = set()
-        stack = [task_id]
-        while stack:
-            current = stack.pop()
-            if current not in touched:
-                touched.add(current)
-                stack.extend(flattened[current].depends_on)
-        return touched
+        return _reach({tid: t.depends_on for tid, t in flattened.items()}, task_id)
+
+    def _descendants(self, flattened: dict[str, Task], task_id: str) -> set[str]:
+        """Return task_id plus every task that depends on it, directly or indirectly"""
+        dependents: dict[str, list[str]] = {tid: [] for tid in flattened}
+        for tid, task in flattened.items():
+            for dep in task.depends_on:
+                dependents[dep].append(tid)
+        return _reach(dependents, task_id)
+
+    def _order(self, flattened: dict[str, Task]) -> list[str]:
+        graph = {tid: task.depends_on for tid, task in flattened.items()}
+        return list(TopologicalSorter(graph).static_order())
+
+    def select(
+        self,
+        task_ids: list[str],
+        only: bool = False,
+        from_: str | None = None,
+        to: str | None = None,
+    ) -> set[str]:
+        """Get set of task_ids to run based on selection flags."""
+        self._validate_or_raise()
+        flattened = self.flatten_tasks()
+
+        for tid in [*task_ids, from_, to]:
+            if tid is not None and tid not in flattened:
+                raise ValueError(f"Task {tid} not found")
+        if task_ids and (from_ or to):
+            raise ValueError("Task IDs can't be combined with --from/--to")
+        if only and not task_ids:
+            raise ValueError("--only needs a task ID")
+
+        if task_ids:
+            if only:
+                return set(task_ids)
+            return set().union(*(self._closure(flattened, tid) for tid in task_ids))
+
+        selection = set(flattened)
+        if from_:
+            selection &= self._descendants(flattened, from_)
+        if to:
+            selection &= self._closure(flattened, to)
+        if not selection:
+            raise ValueError(f"{to} is not downstream of {from_}")
+        return selection
+
+    def stale_upstream(self, selection: set[str]) -> list[str]:
+        """Get stale tasks outside the selection that are depended upon"""
+        flattened = self.flatten_tasks()
+        deps = {dep for tid in selection for dep in flattened[tid].depends_on}
+        return [
+            tid
+            for tid in self._order(flattened)
+            if tid in deps - selection and flattened[tid].is_stale
+        ]
 
     def _run_many(
         self, flattened: dict[str, Task], task_ids, force: bool = False
     ) -> RunReport:
-        graph = {tid: task.depends_on for tid, task in flattened.items()}
-        order = [
-            tid for tid in TopologicalSorter(graph).static_order() if tid in task_ids
-        ]
+        order = [tid for tid in self._order(flattened) if tid in task_ids]
 
         all_task_ids = set(flattened)
 
@@ -189,18 +246,15 @@ class PDP:
         if not self.validate():
             raise InvalidConfigError("\n".join(self.validation_errors()))
 
-    def run_all(self, force: bool = False) -> RunReport:
-        flattened = self.flatten_tasks()
+    def run_selection(self, selection: set[str], force: bool = False) -> RunReport:
         self._validate_or_raise()
-        return self._run_many(flattened, flattened.keys(), force)
+        return self._run_many(self.flatten_tasks(), selection, force)
+
+    def run_all(self, force: bool = False) -> RunReport:
+        return self.run_selection(self.select([]), force)
 
     def run_task(self, task_id: str, force: bool = False) -> RunReport:
-        flattened: dict[str, Task] = self.flatten_tasks()
-        self._validate_or_raise()
-        if task_id not in flattened:
-            raise ValueError(f"Task {task_id} not found")
-        scope = self._closure(flattened, task_id)
-        return self._run_many(flattened, scope, force)
+        return self.run_selection(self.select([task_id]), force)
 
     def _find_task_by_id(self, task_id: str) -> Task | None:
         return self.flatten_tasks().get(task_id)

@@ -106,6 +106,17 @@ def real_dag(tmp_path):
 
 
 @pytest.fixture
+def dag_project(real_dag, tmp_path, monkeypatch):
+    """real_dag as an initialized PDP plus other with no edges, cwd at its root"""
+    monkeypatch.chdir(tmp_path)
+    pdp = PDP()
+    pdp.initialize()
+    pdp.create_task("other")
+
+    return pdp
+
+
+@pytest.fixture
 def two_deps_and_clean(pdp, fs):
     import1 = pdp.create_task("import1")
     import2 = pdp.create_task("import2")

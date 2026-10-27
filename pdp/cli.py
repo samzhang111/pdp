@@ -152,34 +152,62 @@ def validate():
 @app.command()
 @app.command("r", hidden=True)
 def run(
-    task_id: Annotated[str | None, typer.Argument()] = None,
+    task_ids: Annotated[list[str] | None, typer.Argument()] = None,
+    only: Annotated[
+        bool,
+        typer.Option("--only", help="Run the given task(s) without their upstream(s)."),
+    ] = False,
+    from_: Annotated[
+        str | None,
+        typer.Option("--from", help="Run this task and everything downstream of it."),
+    ] = None,
+    to: Annotated[
+        str | None,
+        typer.Option("--to", help="Run this task and everything upstream of it."),
+    ] = None,
+    allow_stale: Annotated[
+        bool,
+        typer.Option(
+            "--allow-stale", help="Run even if a task outside the selection is stale."
+        ),
+    ] = False,
     force: Annotated[
-        bool, typer.Option("--force", "-f", help="Run tasks regardless of staleness.")
+        bool,
+        typer.Option("--force", "-f", help="Run tasks even if they are not stale."),
     ] = False,
 ) -> None:
-    """
-    Run a task (by id) or all tasks (if no id given).
-    """
+    """Run tasks and their upstreams by id, or run all tasks if no id given.
+
+    If run from inside a task directory and without ids, runs that task and its upstream."""
 
     pdp = load_pdp()
 
     try:
-        if task_id:
-            report: RunReport = pdp.run_task(task_id, force)
-        elif pdp.current_path == Path("."):
-            report: RunReport = pdp.run_all(force)
-        else:
+        if not (task_ids or from_ or to) and pdp.current_path != Path("."):
             current_task = pdp.current_task
 
             if current_task is None:
                 err_console.print(f"No task at {pdp.current_path}.")
                 raise typer.Exit(1)
 
-            report: RunReport = pdp.run_task(current_task.task_id, force)
+            task_ids = [current_task.task_id]
+
+        selection = pdp.select(task_ids or [], only, from_, to)
+
+        stale = [] if allow_stale else pdp.stale_upstream(selection)
+        if stale:
+            err_console.print(
+                f"Stale upstream outside the selection: {', '.join(stale)}\n"
+                f"Run with --from {stale[0]} to include it, "
+                "or --allow-stale to run anyway."
+            )
+            raise typer.Exit(1)
+
+        report: RunReport = pdp.run_selection(selection, force)
     except InvalidConfigError as e:
         _exit_validation_failed(e)
     except ValueError as e:
-        # Bad task id
+        # Bad task id or flags
         err_console.print(str(e))
         raise typer.Exit(1)
 

@@ -296,6 +296,41 @@ class TestRun:
         expect(return_code.exit_code).to(equal(0))
 
 
+class TestSelect:
+    """dag_project: import -> clean -> report, plus other"""
+
+    def test_selection_forms(self, dag_project):
+        select = dag_project.select
+        expect(select([])).to(equal({"import", "clean", "report", "other"}))
+        expect(select(["clean"])).to(equal({"import", "clean"}))
+        expect(select(["clean"], only=True)).to(equal({"clean"}))
+        expect(select(["import", "other"], only=True)).to(equal({"import", "other"}))
+        expect(select([], from_="clean")).to(equal({"clean", "report"}))
+        expect(select([], to="clean")).to(equal({"import", "clean"}))
+        expect(select([], from_="import", to="report")).to(
+            equal({"import", "clean", "report"})
+        )
+
+    def test_invalid_selections_raise(self, dag_project):
+        select = dag_project.select
+        with pytest.raises(ValueError, match="Task nope not found"):
+            select(["nope"])
+        with pytest.raises(ValueError, match="--from/--to"):
+            select(["clean"], from_="import")
+        with pytest.raises(ValueError, match="--only"):
+            select([], only=True)
+        with pytest.raises(ValueError, match="import is not downstream of report"):
+            select([], from_="report", to="import")
+
+    def test_stale_upstream(self, dag_project, real_dag):
+        import_task, _, _ = real_dag
+        expect(dag_project.stale_upstream({"clean"})).to(equal(["import"]))
+        expect(dag_project.stale_upstream({"import", "clean"})).to(equal([]))
+
+        (import_task.output_folder / "data.csv").write_text("x")
+        expect(dag_project.stale_upstream({"clean"})).to(equal([]))
+
+
 class TestSymlinks:
     def test_scaffold_symlinks_dependency_output_into_input(
         self, import_and_clean_project

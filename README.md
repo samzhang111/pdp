@@ -92,9 +92,22 @@ Optional
 ### Run locally
 
 - Use `pdp run` from within a task to run that task. If in the project root,
-  this runs all tasks.
-- `pdp run` always runs in the local environment and does not require Dagster or
-  Slurm.
+  this runs all tasks. Slurm.
+- Only stale tasks run. Add `--force` to rerun selected tasks even when they are
+  current.
+- Use `pdp run <task>` to run a specific task.
+
+Select which tasks to run (`import -> clean -> analyze`):
+
+| Command                               | Action                                          |
+| ------------------------------------- | ----------------------------------------------- |
+| `pdp run`                             | All tasks                                       |
+| `pdp run clean`                       | `clean` and its upstream (`import`)             |
+| `pdp run clean --only`                | `clean` alone                                   |
+| `pdp run --from clean`                | `clean` and its downstream (`analyze`)          |
+| `pdp run --from import --to analyze`  | Every task on a path from `import` to `analyze` |
+| `pdp run --to clean`                  | Same as `pdp run clean`                         |
+
 
 ### Run with Dagster
 
