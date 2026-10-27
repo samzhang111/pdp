@@ -15,8 +15,9 @@ projects (see [Usage](#usage)).
 ##### Table of contents
 
 - [Principles](#principles)
-- [Usage](#usage)
 - [Install](#install)
+- [Usage](#usage)
+- [Development](#Development)
 - [Contributing](#contributing)
 - [About PDP](#about)
 
@@ -45,14 +46,14 @@ Soon to be available on PyPI. Meanwhile, you can install with
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install PDP
+# Install pdp
 uv tool install "pdp[dagster] @ git+https://github.com/scienceandhumanitylab/pdp"
 
 # Alternatively, install just the core PDP features
 # No Dagster or Slurm - local use only
 uv tool install "pdp @ git+https://github.com/scienceandhumanitylab/pdp"
 
-# Upgrade PDP
+# Upgrade pdp
 uv tool upgrade pdp
 ```
 
@@ -68,7 +69,7 @@ Optional
 
 ## Usage
 
-### Editing an existing PDP project
+### Editing an existing pdp project
 
 - Run `pdp init` from the root of a project. It creates a file called `pdp.yml`,
   which contains metadata about the project, and marks the project root.
@@ -199,6 +200,8 @@ cd pdp
 uv sync
 uv tool install --force --editable ".[dagster]"
 ```
+
+## Contributing
 
 See [Contribution Guidelines](CONTRIBUTING.md) for details.
 
