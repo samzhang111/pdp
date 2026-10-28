@@ -21,6 +21,8 @@ When merging to main:
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-28
+
 - `pdp run` accepts several task IDs and selection flags:
   - `--only` runs the given tasks without their upstream.
   - `--from <task>` runs a task and its downstream.
