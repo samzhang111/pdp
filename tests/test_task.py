@@ -309,3 +309,27 @@ class TestSlurmFlags:
 
     def test_no_slurm_block_uses_project_defaults(self, real_task):
         expect(real_task.slurm_flags({"mem": "16G"})).to(equal(["--mem=16G"]))
+
+
+class TestClean:
+    def test_clean_removes_matching_files_and_folders(self, real_task):
+        write_task_yml(real_task.task_directory, clean=["output/*", "tmp"])
+        (real_task.output_folder / "result.csv").touch()
+        (real_task.task_directory / "tmp").mkdir()
+        (real_task.task_directory / "tmp" / "scratch.txt").touch()
+
+        removed = real_task.clean()
+
+        expect(removed).to(equal([Path("output/result.csv"), Path("tmp")]))
+        expect(list(real_task.output_folder.iterdir())).to(equal([]))
+        expect((real_task.task_directory / "tmp").exists()).to(be_false)
+
+    def test_clean_does_not_follow_symlinks_out_of_task(self, real_task, tmp_path):
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "data.csv").touch()
+        (real_task.input_folder / "elsewhere").symlink_to(elsewhere)
+        write_task_yml(real_task.task_directory, clean=["input/elsewhere/*"])
+
+        expect(real_task.clean()).to(equal([]))
+        expect((elsewhere / "data.csv").exists()).to(be_true)

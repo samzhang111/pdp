@@ -220,6 +220,9 @@ assets in the UI.
 
 - Run `pdp tree` to see the tree structure of all tasks.
 - Run `pdp validate` to validate the project configuration.
+- Run `pdp clean` to delete each task's `clean:` globs from `task.yml`, like
+  `clean: [output/*, tmp]`. Takes task IDs (those tasks only, not upstream),
+  `--from` and `--to`. Files reached through `input/` links are never deleted.
 
 ## Contributing
 

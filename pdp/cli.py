@@ -290,6 +290,47 @@ def run(
 
 
 @app.command()
+def clean(task_ids: TaskIds = None, from_: From = None, to: To = None) -> None:
+    """Delete the files listed under `clean` in each task.yml.
+
+    Cleans only the given tasks, not their upstreams, or every task if no id given.
+    If run from inside a task directory and without ids, cleans that task."""
+
+    pdp = load_pdp()
+
+    try:
+        if not (task_ids or from_ or to) and pdp.current_path != Path("."):
+            current_task = pdp.current_task
+
+            if current_task is None:
+                err_console.print(f"No task at {pdp.current_path}.")
+                raise typer.Exit(1)
+
+            task_ids = [current_task.task_id]
+
+        selection = pdp.select(task_ids or [], bool(task_ids), from_, to)
+    except ValueError as e:
+        err_console.print(str(e))
+        raise typer.Exit(1)
+
+    flattened = pdp.flatten_tasks()
+    graph = {tid: task.depends_on for tid, task in flattened.items()}
+    cleaned = False
+    for tid in TopologicalSorter(graph).static_order():
+        if tid not in selection:
+            continue
+        removed = flattened[tid].clean()
+        if removed:
+            cleaned = True
+            console.print(
+                f"{tid}: removed {', '.join(str(p) for p in removed)}", markup=False
+            )
+
+    if not cleaned:
+        console.print("Nothing to clean.")
+
+
+@app.command()
 @app.command("t", hidden=True)
 def tree() -> None:
     """Print the task tree as flat list with dependencies."""

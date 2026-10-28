@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import warnings
 from pathlib import Path
@@ -91,6 +92,34 @@ class Task:
                     os.remove(path)
 
         return result.returncode
+
+    def clean(self) -> list[Path]:
+        """Delete files matching task.yml's clean patterns.
+
+        Matches reached through a symlink (like input/<dep>/) are skipped
+        so cleaning never touches another task's files.
+
+        Returns:
+            removed: Paths removed, relative to the task directory
+        """
+        removed = []
+        for pattern in self.task_config.clean:
+            for path in sorted(self.task_directory.glob(pattern)):
+                if (
+                    path == self.task_directory
+                    or path == self.task_config.path_to_config
+                    # through a symlink, or outside the task via ..
+                    or path.parent.resolve() != path.parent
+                ):
+                    continue
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                elif path.is_symlink() or path.exists():
+                    path.unlink()
+                else:
+                    continue  # already removed by an earlier pattern
+                removed.append(path.relative_to(self.task_directory))
+        return removed
 
     def _output_snapshot(self) -> dict[str, tuple[int, int]]:
         """Record mtime_ns and size of every output/ file

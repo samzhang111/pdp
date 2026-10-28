@@ -192,7 +192,9 @@ class TaskConfig(GenericConfig):
         allowed_keys = {"name", *self.CONFIG_DEFAULTS}
         errors = []
 
-        unexpected = set(self.config.keys()) - allowed_keys - {"slurm", "description"}
+        unexpected = (
+            set(self.config.keys()) - allowed_keys - {"slurm", "description", "clean"}
+        )
         missing = allowed_keys - set(self.config.keys())
 
         if unexpected:
@@ -217,9 +219,21 @@ class TaskConfig(GenericConfig):
                 f"description must be str, got {_yaml_type_name(self.config['description'])}"
             )
 
+        clean = self.config.get("clean", [])
+        if not isinstance(clean, list):
+            errors.append(f"clean must be list, got {_yaml_type_name(clean)}")
+        elif not all(isinstance(pattern, str) for pattern in clean):
+            errors.append("clean must be a list of strings")
+
         errors += slurm_errors(self.config)
 
         return errors
+
+    @property
+    @requires_initialization
+    def clean(self) -> list[str]:
+        self.config = self.read_config_file()
+        return self.config.get("clean", [])
 
     @property
     @requires_initialization

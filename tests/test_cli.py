@@ -459,3 +459,39 @@ class TestDagsterCli:
             )
         )
         popen.assert_not_called()
+
+
+class TestClean:
+    @pytest.fixture
+    def cleanable_dag(self, stale_dag):
+        """stale_dag where every task has output/ran and cleans output/*"""
+        for task in stale_dag.tasks:
+            write_task_yml(task.task_id, depends_on=task.depends_on, clean=["output/*"])
+            (task.output_folder / "ran").touch()
+        return stale_dag
+
+    def tasks_with_output(self, project):
+        return {t.task_id for t in project.tasks if (t.output_folder / "ran").exists()}
+
+    @pytest.mark.parametrize(
+        "args, left",
+        [
+            ([], set()),
+            (["clean"], {"import", "report", "other"}),
+            (["--from", "clean"], {"import", "other"}),
+            (["--to", "clean"], {"report", "other"}),
+        ],
+    )
+    def test_cleans_selection(self, cleanable_dag, args, left):
+        result = CliRunner(mix_stderr=False).invoke(app, ["clean", *args])
+
+        expect(result.exit_code).to(equal(0))
+        expect(self.tasks_with_output(cleanable_dag)).to(equal(left))
+
+    @pytest.mark.usefixtures("cleanable_dag")
+    def test_prints_what_was_removed_then_nothing_to_clean(self):
+        first = CliRunner(mix_stderr=False).invoke(app, ["clean", "import"])
+        second = CliRunner(mix_stderr=False).invoke(app, ["clean", "import"])
+
+        expect(first.stdout).to(equal("import: removed output/ran\n"))
+        expect(second.stdout).to(equal("Nothing to clean.\n"))
