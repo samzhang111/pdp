@@ -188,9 +188,23 @@ def _require_dagster() -> None:
         raise typer.Exit(1)
 
 
+WRITTEN_SHOWN = 10  # files listed per task in the run report
+
+
 def _print_report(report: RunReport) -> None:
     if report.ran:
         console.print(f"Ran: {', '.join(report.ran)}")
+    if report.written:
+        console.print("Wrote:")
+        for tid, paths in report.written.items():
+            for path in paths[:WRITTEN_SHOWN]:
+                console.print(f"  {path}", markup=False, highlight=False)
+            if len(paths) > WRITTEN_SHOWN:
+                console.print(
+                    f"  ... and {len(paths) - WRITTEN_SHOWN} more in {tid}/output",
+                    markup=False,
+                    highlight=False,
+                )
     if report.current:
         console.print(f"Current: {', '.join(report.current)}")
     if report.no_output:

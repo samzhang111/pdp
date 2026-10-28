@@ -93,6 +93,15 @@ class Task:
 
         return result.returncode
 
+    def written_since(self, before: dict[str, tuple[int, int]]) -> list[str]:
+        """output/ files created or modified since the `before` snapshot,
+        relative to the project root"""
+        return sorted(
+            os.path.relpath(path, self.task_directory.parent)
+            for path, stat in self._output_snapshot().items()
+            if before.get(path) != stat
+        )
+
     def clean(self) -> list[Path]:
         """Delete files matching task.yml's clean patterns.
 

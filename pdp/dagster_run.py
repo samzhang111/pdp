@@ -61,6 +61,8 @@ def _report(pdp: PDP, selection: set[str], result: dg.JobExecutionResult) -> Run
                 report.current.append(tid)
                 continue
             report.ran.append(tid)
+            if written := metadata["pdp/written"].value:
+                report.written[tid] = written
             if metadata["pdp/no_output"].value:
                 report.no_output.append(tid)
         elif op_name(tid) in failed_steps:

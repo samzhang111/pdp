@@ -36,6 +36,8 @@ class RunReport:
     current: list[str] = field(default_factory=list)
     no_entrypoint: list[str] = field(default_factory=list)
     no_output: list[str] = field(default_factory=list)
+    # task_id -> output/ files the run created or modified
+    written: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def exit_code(self) -> int:
@@ -233,10 +235,13 @@ class PDP:
                 report.current.append(tid)
                 continue
             task.create_symlinks(all_task_ids)
+            before = task._output_snapshot()
             if task.run() != 0:
                 report.failed.append(tid)
                 continue
             report.ran.append(tid)
+            if written := task.written_since(before):
+                report.written[tid] = written
             if latest_mtime_in_dir(task.output_folder) is None:
                 # Empty output = stale task
                 report.no_output.append(tid)

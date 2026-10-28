@@ -82,6 +82,7 @@ def build_asset(
         # Run python -m pdp.pipes_wrapper <task_id> as subprocess through pipes
         command = [sys.executable, "-m", "pdp.pipes_wrapper", task_id]
         cwd = str(project_root)
+        before = task._output_snapshot()
         if isinstance(pipes, PdpSlurmClient):
             pipes.run(
                 context=context,
@@ -97,7 +98,11 @@ def build_asset(
             context.log.warning(f"{task_id} ran but created nothing in output/ folder")
 
         return dg.MaterializeResult(
-            metadata={"pdp/ran": True, "pdp/no_output": no_output},
+            metadata={
+                "pdp/ran": True,
+                "pdp/no_output": no_output,
+                "pdp/written": dg.MetadataValue.json(task.written_since(before)),
+            },
             data_version=output_data_version(task),
         )
 

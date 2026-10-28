@@ -21,6 +21,9 @@ class TestRunDagster:
         report = run_dagster(stale_dag, {"import", "clean"}, slurm=True)
 
         expect(report.ran).to(equal(["import", "clean"]))
+        expect(report.written).to(
+            equal({"import": ["import/output/ran"], "clean": ["clean/output/ran"]})
+        )
         expect((root / "report/output/ran").exists()).to(be_false)
         srun_lines = (slurm_log / "srun").read_text().splitlines()
         expect(srun_lines).to(have_len(2))
@@ -61,6 +64,7 @@ class TestRunDagster:
                     "current": ["current"],
                     "no_entrypoint": ["no-entry"],
                     "no_output": ["empty"],
+                    "written": {},
                 }
             )
         )

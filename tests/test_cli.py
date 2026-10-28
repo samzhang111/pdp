@@ -230,6 +230,13 @@ class TestRunSelection:
         expect(result.exit_code).to(equal(0))
         expect(self.tasks_that_ran(stale_dag)).to(equal(ran))
 
+    def test_prints_files_written(self, stale_dag):
+        result = CliRunner(mix_stderr=False).invoke(app, ["run", "--to", "clean"])
+
+        expect(result.stdout).to(
+            contain("Wrote:\n  import/output/ran\n  clean/output/ran\n")
+        )
+
     @pytest.mark.parametrize(
         "args",
         [["clean", "--only"], ["--from", "clean"], ["clean", "--only", "--force"]],
@@ -337,6 +344,16 @@ class TestRunner:
         expect(result.exit_code).to(equal(1))
         expect(result.stdout).to(contain("Ran: import"))
         expect(result.stderr).to(contain("Failed: clean"))
+
+    def test_written_files_are_capped_per_task(self):
+        files = [f"import/output/{i:02}.csv" for i in range(12)]
+        report = RunReport(ran=["import"], written={"import": files})
+
+        result, _ = self.invoke_run("--runner", "dagster", report=report)
+
+        expect(result.stdout).to(contain("  import/output/09.csv\n"))
+        expect(result.stdout).not_to(contain("import/output/10.csv"))
+        expect(result.stdout).to(contain("  ... and 2 more in import/output\n"))
 
     def test_dagster_runner_needs_dagster(self):
         with patch("importlib.util.find_spec", return_value=None):

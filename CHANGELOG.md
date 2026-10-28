@@ -37,6 +37,8 @@ When merging to main:
 - `pdp remote run` runs a selection on the cluster with `--slurm` in tmux and
   streams its log. `pdp remote status` shows the run, `pdp remote push` and
   `pdp remote pull` refuse while it runs and `pdp remote stop` stops it.
+- `pdp run` lists the `output/` files each task created or modified, up to 10
+  per task.
 - `pdp clean` deletes the globs listed under `clean:` in each `task.yml`, for
   the given tasks, `--from`/`--to`, or every task.
 
