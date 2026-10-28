@@ -160,7 +160,7 @@ class PDP:
                 dependents[dep].append(tid)
         return _reach(dependents, task_id)
 
-    def _order(self, flattened: dict[str, Task]) -> list[str]:
+    def order(self, flattened: dict[str, Task]) -> list[str]:
         graph = {tid: task.depends_on for tid, task in flattened.items()}
         return list(TopologicalSorter(graph).static_order())
 
@@ -203,14 +203,14 @@ class PDP:
         deps = {dep for tid in selection for dep in flattened[tid].depends_on}
         return [
             tid
-            for tid in self._order(flattened)
+            for tid in self.order(flattened)
             if tid in deps - selection and flattened[tid].is_stale
         ]
 
     def _run_many(
         self, flattened: dict[str, Task], task_ids, force: bool = False
     ) -> RunReport:
-        order = [tid for tid in self._order(flattened) if tid in task_ids]
+        order = [tid for tid in self.order(flattened) if tid in task_ids]
 
         all_task_ids = set(flattened)
 

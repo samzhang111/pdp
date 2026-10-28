@@ -1,4 +1,4 @@
-"""Run a selection of tasks through Dagster without the UI"""
+"""Run tasks through Dagster without the UI"""
 
 import json
 import os
@@ -17,7 +17,6 @@ from .pdp import PDP, RunReport
 from .utils import dagster_env
 
 QUIET_LOGS = {"loggers": {"console": {"config": {"log_level": "CRITICAL"}}}}
-# Step processes log through the instance's logger, which ignores the run's loggers
 QUIET_INSTANCE = {"python_logs": {"python_log_level": "CRITICAL"}}
 
 
@@ -53,7 +52,7 @@ def _report(pdp: PDP, selection: set[str], result: dg.JobExecutionResult) -> Run
     failed_steps = {event.step_key for event in result.get_step_failure_events()}
 
     report = RunReport()
-    for tid in pdp._order(flattened):
+    for tid in pdp.order(flattened):
         if tid not in selection:
             continue
         if tid in materialized:
@@ -109,7 +108,7 @@ def run_dagster(
         )
         with dg.DagsterInstance.from_ref(instance_ref) as instance:
             try:
-                # Without raise_on_error, Dagster swallows an interrupt.
+                # Without raise_on_error, Dagster doesn't raise on interrupt.
                 # Step failures never raise here
                 result = dg.execute_job(
                     job,

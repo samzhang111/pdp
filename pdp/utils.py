@@ -44,6 +44,11 @@ def find_project_root(config_name: str, start: Path | None = None) -> Path:
     return (start or Path.cwd()).resolve()
 
 
+def slurm_enabled(env) -> bool:
+    """PDP_SLURM is on unless unset, empty, 0 or false"""
+    return env.get("PDP_SLURM", "").strip().lower() not in ("", "0", "false")
+
+
 def dagster_env(project_root: Path, slurm: bool) -> dict[str, str]:
     """Environment variables `pdp.dagster_defs` and the Slurm client need.
 

@@ -17,7 +17,7 @@ from rich.console import Console
 from pdp import remote
 from pdp.pdp import PDP, RunReport
 from pdp.pdp_errors import InvalidConfigError, SlurmUnavailableError
-from pdp.utils import dagster_env
+from pdp.utils import dagster_env, slurm_enabled
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -160,7 +160,7 @@ class Runner(str, Enum):
 TaskIds = Annotated[list[str] | None, typer.Argument()]
 Only = Annotated[
     bool,
-    typer.Option("--only", help="Run the given task(s) without their upstream(s)."),
+    typer.Option("--only", help="Run the given task(s) without their upstream."),
 ]
 From = Annotated[
     str | None,
@@ -238,9 +238,9 @@ def run(
 
     pdp = load_pdp()
     env = remote.parse_env(pdp.project_root / ".env") | os.environ
-    slurm = slurm or bool(env.get("PDP_SLURM"))
+    slurm = slurm or slurm_enabled(env)
     if slurm and runner == Runner.pdp:
-        err_console.print("--slurm needs the dagster runner.")
+        err_console.print("--slurm (or PDP_SLURM) needs the dagster runner.")
         raise typer.Exit(1)
     use_dagster = slurm or (runner or pdp.config.runner) == Runner.dagster
     if use_dagster:

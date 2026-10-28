@@ -30,8 +30,7 @@ PDP_REMOTE_HOST=vacc-login1
 PDP_REMOTE_PATH=/gpfs1/home/n/e/netid/pdp-project
 
 # optional
-PDP_REMOTE_PORT=3000
-PDP_REMOTE_SPEC=pdp[dagster] @ git+https://github.com/szhang111/pdp@v0.2.1"""
+PDP_REMOTE_PORT=3000"""
 
 
 class RemoteError(Exception):
@@ -257,7 +256,10 @@ def stop(remote: Remote, sessions: list[str]) -> tuple[list[str], list[str]]:
     killed = [
         session
         for session in sessions
-        if remote.ssh(f"tmux kill-session -t {_target(session)}").returncode == 0
+        if remote.ssh(
+            f"tmux kill-session -t {_target(session)}", capture_output=True
+        ).returncode
+        == 0
     ]
     # scancel --name matches exact names only, so cancel pdp's jobs by id
     job_ids = pdp_job_ids(remote)

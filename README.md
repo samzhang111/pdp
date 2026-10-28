@@ -46,7 +46,7 @@ Soon to be available on PyPI. Meanwhile, clone and install with
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # clone and install pdp
-git clone https://github.com/samzhang111/pdp.git
+git clone https://github.com/scienceandhumanitylab/pdp.git
 uv tool install ./pdp
 
 # install pdp with dagster (optional):
@@ -92,54 +92,48 @@ Optional
 ### Run locally
 
 - Use `pdp run` from within a task to run that task. If in the project root,
-  this runs all tasks. Slurm.
+  this runs all tasks.
 - Only stale tasks run. Add `--force` to rerun selected tasks even when they are
   current.
 - Use `pdp run <task>` to run a specific task.
 
 Select which tasks to run (`import -> clean -> analyze`):
 
-| Command                               | Action                                          |
-| ------------------------------------- | ----------------------------------------------- |
-| `pdp run`                             | All tasks                                       |
-| `pdp run clean`                       | `clean` and its upstream (`import`)             |
-| `pdp run clean --only`                | `clean` alone                                   |
-| `pdp run --from clean`                | `clean` and its downstream (`analyze`)          |
-| `pdp run --from import --to analyze`  | Every task on a path from `import` to `analyze` |
-| `pdp run --to clean`                  | Same as `pdp run clean`                         |
+| Command                              | Action                                          |
+| ------------------------------------ | ----------------------------------------------- |
+| `pdp run`                            | All tasks                                       |
+| `pdp run clean`                      | `clean` and its upstream (`import`)             |
+| `pdp run clean --only`               | `clean` alone                                   |
+| `pdp run --from clean`               | `clean` and its downstream (`analyze`)          |
+| `pdp run --from import --to analyze` | Every task on a path from `import` to `analyze` |
+| `pdp run --to clean`                 | Same as `pdp run clean`                         |
 
 Several IDs run the union of their selections, so `pdp run import other --only`
 runs both alone. If a selected task depends on a stale task outside the
 selection, `pdp run` refuses and suggests `--from <task>`. Add `--allow-stale`
 to run anyway.
 
-
 ### Run with Dagster
 
-- Run `pdp dagster dev` to start Dagster UI. From there, you can materialize
-  assets. No other Dagster CLI commands currently pass through.
-- Tasks from PDP are generated as Dagster assets. Observations are used to
-  record events so that changes to outputs outside of Dagster are properly
-  recognized.
-- Run `pdp run --runner dagster` to run a selection through Dagster without the
-  UI, or set `runner: dagster` in `pdp.yml` to make it the default. It prints the
-  same summary as `pdp run`. Add `-v` to see Dagster's logs. Runs show up in the
-  UI's run list later.
+- Run `pdp dagster dev` to start Dagster UI. Then you can materialize assets.
+- Tasks from PDP are generated as Dagster assets.
+- Run `pdp run --runner dagster` to run a through Dagster without the UI, or set
+  `runner: dagster` in `pdp.yml` to make it the default. Add `-v` to see
+  Dagster's logs.
 
-### Run with Dagster-Slurm
+### Run with Dagster on Slurm
 
 - The VACC has `uv` and `tmux` installed by default. Both are required to be
   able to run PDP on Slurm.
 - Put slurm flags in an optional `slurm:` block in the `pdp.yml`. You can also
   set `task.yml` with settings that override the `pdp.yml` for that task.
 - Datasets on the VACC can be symlinked in your local project
-  (`ln -s /path/from/vacc task/input/data.csv`). Symlinks will sync with PDP to
-  be able to access those datasets during runtime.
+  (`ln -s /path/from/vacc task/input/data.csv`). Symlinks will sync with pdp to
+  be able to access datasets on the cluster at runtime.
 - Run `pdp dagster dev --slurm` to run the project with each task as a Slurm
   job.
-- Run `pdp run --slurm` (with any selection flags) to do the same without the
-  UI. `--slurm` implies `--runner dagster`. Setting `PDP_SLURM=1` in the
-  environment or `.env` has the same effect.
+- Run `pdp run --slurm` to run the project the same but without the UI.
+  `--slurm` implies `--runner dagster`.
 
 ```yaml
 # pdp.yml
@@ -155,7 +149,7 @@ slurm:
 
 Jobs inherit the login node's environment (`--export=ALL`).
 
-#### From Local Machine (Recommended)
+#### From Local Machine
 
 Launch your project from your local machine and have PDP sync and run it from
 the cluster with Dagster-Slurm.
@@ -167,9 +161,6 @@ First, put the cluster info in `.env` in your project root, and add `.env` to
 PDP_REMOTE_HOST=vacc-login1
 PDP_REMOTE_PATH=/gpfs1/home/n/e/netid/my-project
 PDP_REMOTE_PORT=3000 # optional
-
-# optionally pdp dagster version - only needed in development to keep uv accurate
-PDP_REMOTE_SPEC=pdp[dagster] @ git+https://github.com/ChrisDonovan307/pdp@740a13e
 ```
 
 Configure a `~/.ssh/config` which specifies a login node. This is required
@@ -244,6 +235,13 @@ Install as an editable tool with Dagster for development:
 
 ```sh
 uv tool install --force --editable "[dagster]"
+```
+
+If working with branches that are ahead of the latest release tag, add a pinned
+version to the `.env`:
+
+```sh
+PDP_REMOTE_SPEC="pdp[dagster] @ git+https://github.com/scienceandhumanitylab/pdp@<sha>"
 ```
 
 Guidelines

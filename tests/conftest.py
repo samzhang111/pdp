@@ -10,6 +10,13 @@ from pdp.task import Task
 from tests.helpers import backdate_task_yml, make_real_task, write_task_yml
 
 
+@pytest.fixture(autouse=True)
+def no_pdp_env(monkeypatch):
+    """The developer's shell could send runs to Dagster, Slurm or another DAGSTER_HOME"""
+    for key in ("PDP_SLURM", "DAGSTER_HOME", "PDP_PROJECT_ROOT"):
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture
 def config(fs):
     config = PDPConfig("test", Path("pdp.yml"))
@@ -115,6 +122,16 @@ def dag_project(real_dag, tmp_path, monkeypatch):
     pdp.create_task("other")
 
     return pdp
+
+
+@pytest.fixture
+def stale_dag(dag_project):
+    """import -> clean -> report, plus other. All stale, each touches output/ran"""
+    for task in dag_project.tasks:
+        write_task_yml(
+            task.task_id, entrypoint="touch output/ran", depends_on=task.depends_on
+        )
+    return dag_project
 
 
 @pytest.fixture
