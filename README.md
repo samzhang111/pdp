@@ -38,19 +38,22 @@ projects (see [Usage](#usage)).
 
 ## Install
 
-Soon to be available on PyPI. Meanwhile, clone and install with
-[uv tool](https://docs.astral.sh/uv/concepts/tools/):
+Soon to be available on PyPI. Meanwhile, you can install with
+[uv](https://docs.astral.sh/uv/):
 
 ```sh
-# install uv if needed:
+# Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# clone and install pdp
-git clone https://github.com/scienceandhumanitylab/pdp.git
-uv tool install ./pdp
+# Install pdp
+uv tool install "pdp[dagster] @ git+https://github.com/scienceandhumanitylab/pdp"
 
-# install pdp with dagster (optional):
-uv tool install "./pdp[dagster]"
+# Alternatively, install just the core PDP features
+# No Dagster or Slurm - local use only
+uv tool install "pdp @ git+https://github.com/scienceandhumanitylab/pdp"
+
+# Upgrade pdp
+uv tool upgrade pdp
 ```
 
 **Requirements:**
@@ -158,54 +161,42 @@ First, put the cluster info in `.env` in your project root, and add `.env` to
 `.gitignore`:
 
 ```sh
-PDP_REMOTE_HOST=vacc-login1
+PDP_REMOTE_HOST=<mynetid>@login1.vacc.uvm.edu
 PDP_REMOTE_PATH=/gpfs1/home/n/e/netid/my-project
-PDP_REMOTE_PORT=3000 # optional
+PDP_REMOTE_PORT=3002 # optional
 ```
 
-Configure a `~/.ssh/config` which specifies a login node. This is required
-because PDP commands need to reach the same login node when syncing, pushing,
-and pulling.
-
-```
-Host vacc-login1
-    HostName vacc-login1
-    User <netid>
-    ProxyJump <netid>@login.vacc.uvm.edu
-```
+Note that we need to specify a login node so that we can keep communicating with
+the Dagster session.
 
 To run the project:
 
-- `pdp remote start` pushes the project to VACC, opens a tmux session called
-  `pdp-<project-name>`, runs `pdp dagster dev --slurm` and forwards the UI for
-  Dagster. Set the port with `-p` or `PDP_REMOTE_PORT`.
+- `pdp remote start` pushes the project to VACC, opens a persistent tmux
+  session, runs `pdp dagster dev --slurm` and forwards the UI for Dagster. Set
+  the port with `-p` or `PDP_REMOTE_PORT`.
   - Visit the localhost URL to materialize assets with Dagster.
-  - Closing your terminal only closes the tunnel - the tmux sesion will persist
-    on the cluster.
+  - Closing your terminal only closes the tunnel. The tmux session will persist
+    on the cluster and will keep managing jobs.
   - Run `pdp remote start` again to reconnect to the session.
 - `pdp remote run` runs `pdp run --slurm` on the cluster, without the UI, in a
   tmux session called `pdp-<project-name>-run`, and streams its log. It takes
   the same selection flags as `pdp run`.
   - It pushes first, unless the `remote start` session is running or you pass
     `--no-push`.
-  - Ctrl-C or a dropped connection ends only the stream. The run keeps going.
+  - Ctrl-C or a lost connection ends the stream, but the run continues in tmux.
     Run `pdp remote run` again to reattach.
-  - It exits with the run's exit code. Then use `pdp remote pull` to fetch the
-    output.
+  - Use `pdp remote pull` to fetch the output.
 - `pdp remote status` shows whether a run is in progress, or the last run's
   result.
-- `pdp remote push` syncs the project to the cluster, unless either session is
-  running. `pdp remote start` also skips the push while a run is in progress.
+- `pdp remote push` syncs the project to the cluster, unless a session is
+  running.
 - `pdp remote pull` pulls each task's `output/` from the cluster back to your
-  local machine. It refuses while a run or jobs are still running, but can be
-  interrupted with `--force`.
-- `pdp remote stop` ends both tmux sessions and cancels PDP's remaining Slurm
-  jobs.
+  local machine.
+- `pdp remote stop` ends both tmux sessions and cancels remaining Slurm jobs.
 
 #### From the Cluster
 
-Clone your repository into a directory project on the cluster. Then, on a login
-node:
+Clone your repository into a the cluster. Then, on a login node:
 
 ```sh
 tmux new -s pdp
@@ -214,24 +205,29 @@ pdp dagster dev --slurm -p 3000   # 3000 is default
 
 Forward the port from your local machine with
 `ssh -N -L 3000:localhost:3000 <node>` and open localhost:3000 to materialize
-assets in the UI.
+assets in the UI. Alternatively, use any of the `pdp run` commands followed by
+`--slurm`. For example, `pdp run task1 --slurm`.
 
 ### Additional commands
 
 - Run `pdp tree` to see the tree structure of all tasks.
 - Run `pdp validate` to validate the project configuration.
-- Run `pdp clean` to delete each task's `clean:` globs from `task.yml`, like
-  `clean: [output/*, tmp]`. Takes task IDs (those tasks only, not upstream),
-  `--from` and `--to`. Files reached through `input/` links are never deleted.
+- Run `pdp clean` to delete each task's `clean:` files from `task.yml`, like
+  `clean: [output/*]`.
 
-## Contributing
+## Development
 
 Install `uv`, clone repository and sync dependencies:
 
 ```sh
+# Install uv if necessary
 curl -LsSf https://astral.sh/uv/install.sh | sh
-git clone https://github.com/samzhang111/pdp.git
+
+# Clone repo and install editable
+git clone https://github.com/scienceandhumanitylab/pdp
+cd pdp
 uv sync
+uv tool install --force --editable ".[dagster]"
 ```
 
 Install as an editable tool with Dagster for development:
@@ -254,6 +250,7 @@ Guidelines
   [Ruff](https://github.com/astral-sh/ruff).
 - Use
   [Google style docstrings](https://google.github.io/styleguide/pyguide.html#docstrings).
+- See [Contribution Guidelines](CONTRIBUTING.md) for details.
 
 ## About
 

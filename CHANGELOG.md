@@ -28,29 +28,24 @@ When merging to main:
   - `--from <task>` runs a task and its downstream.
   - `--to <task>` runs a task and its upstream. With `--from`, runs every task
     on a path between the two.
+  - `pdp run --runner [pdp|dagster]` and `runner:` in `pdp.yml` choose the
+    runner.
+  - `pdp run --slurm` runs each task as a Slurm job through Dagster.
 - `pdp run` refuses to run when a selected task depends on a stale task outside
   the selection. `--allow-stale` runs anyway.
-- `pdp run --runner [pdp|dagster]` and `runner:` in `pdp.yml` choose the
-  runner.
-- `pdp run --slurm`, or `PDP_SLURM=1` in the environment or `.env`, runs each
-  task as a Slurm job through Dagster.
-- `pdp remote run` runs a selection on the cluster with `--slurm` in tmux and
-  streams its log. `pdp remote status` shows the run, `pdp remote push` and
-  `pdp remote pull` refuse while it runs and `pdp remote stop` stops it.
+- `pdp remote run` runs a selection of tasks on the cluster with `--slurm`
+- `pdp remote status` shows the run, `pdp remote push` and `pdp remote pull`
+  refuse while it runs and `pdp remote stop` stops it.
 - `pdp run` lists the `output/` files each task created or modified, up to 10
   per task.
-- `pdp clean` deletes the globs listed under `clean:` in each `task.yml`, for
-  the given tasks, `--from`/`--to`, or every task.
+- `pdp clean` deletes files listed under `clean:` in each `task.yml`
+- Added `CONTRIBUTING.md`
+- Templates for bug reports, feature requests, and pull requests
 
 ### Changed
 
 - `pdp run` no longer lists failed tasks under "Ran".
 - `pdp dagster dev` writes a `dagster.yaml` that turns off Dagster telemetry
-  when it creates the default `<root>/.dagster`.
-
-### Fixed
-
-- `pdp remote` matches tmux session names exactly, not by prefix.
 
 ## [0.2.2] - 2026-10-26
 
