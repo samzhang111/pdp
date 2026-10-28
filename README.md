@@ -15,8 +15,9 @@ projects (see [Usage](#usage)).
 ##### Table of contents
 
 - [Principles](#principles)
-- [Usage](#usage)
 - [Install](#install)
+- [Usage](#usage)
+- [Development](#Development)
 - [Contributing](#contributing)
 - [About PDP](#about)
 
@@ -68,7 +69,7 @@ Optional
 
 ## Usage
 
-### Editing an existing PDP project
+### Editing an existing pdp project
 
 - Run `pdp init` from the root of a project. It creates a file called `pdp.yml`,
   which contains metadata about the project, and marks the project root.
@@ -230,10 +231,12 @@ uv sync
 uv tool install --force --editable ".[dagster]"
 ```
 
-Install as an editable tool with Dagster for development:
+## Contributing
+
+Install an editable version of the tool for development:
 
 ```sh
-uv tool install --force --editable "[dagster]"
+uv tool install --force --editable ".[dagster]"
 ```
 
 If working with branches that are ahead of the latest release tag, add a pinned

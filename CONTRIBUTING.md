@@ -1,6 +1,6 @@
-# Contributing to CONTRIBUTING.md
+# Contributing to pdp
 
-Thank you for taking the time to contribute to PDP!
+Thank you for taking the time to contribute to pdp!
 
 Any kind of contribution is encouraged and appreciated. See the
 [Table of Contents](#table-of-contents) for different ways to help and details
@@ -27,7 +27,7 @@ about how this project handles them.
 
 This project is still nascent, so proper documentation and tutorials are still
 being developed. Be sure to check the [README](README.md) for basics on setting
-up and using PDP. Also, please check the
+up and using pdp. Also, please check the
 [Issues](https://github.com/scienceandhumanitylab/pdp/issues) in case someone
 has asked a similar question already.
 
