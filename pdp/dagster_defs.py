@@ -6,6 +6,7 @@ from pathlib import Path
 import dagster as dg
 
 from .dagster_assets import build_definitions, load_project, reconcile
+from .utils import slurm_enabled
 
 if not os.environ.get("PDP_PROJECT_ROOT"):
     raise RuntimeError(
@@ -13,7 +14,7 @@ if not os.environ.get("PDP_PROJECT_ROOT"):
     )
 
 project_root = Path(os.environ["PDP_PROJECT_ROOT"])
-defs = build_definitions(project_root, slurm=bool(os.environ.get("PDP_SLURM")))
+defs = build_definitions(project_root, slurm=slurm_enabled(os.environ))
 
 # Reconcile events on definition load
 with dg.DagsterInstance.get() as instance:

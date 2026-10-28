@@ -30,8 +30,7 @@ PDP_REMOTE_HOST=vacc-login1
 PDP_REMOTE_PATH=/gpfs1/home/n/e/netid/pdp-project
 
 # optional
-PDP_REMOTE_PORT=3000
-PDP_REMOTE_SPEC=pdp[dagster] @ git+https://github.com/szhang111/pdp@v0.2.1"""
+PDP_REMOTE_PORT=3000"""
 
 
 class RemoteError(Exception):

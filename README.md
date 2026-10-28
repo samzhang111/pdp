@@ -92,27 +92,26 @@ Optional
 ### Run locally
 
 - Use `pdp run` from within a task to run that task. If in the project root,
-  this runs all tasks. Slurm.
+  this runs all tasks.
 - Only stale tasks run. Add `--force` to rerun selected tasks even when they are
   current.
 - Use `pdp run <task>` to run a specific task.
 
 Select which tasks to run (`import -> clean -> analyze`):
 
-| Command                               | Action                                          |
-| ------------------------------------- | ----------------------------------------------- |
-| `pdp run`                             | All tasks                                       |
-| `pdp run clean`                       | `clean` and its upstream (`import`)             |
-| `pdp run clean --only`                | `clean` alone                                   |
-| `pdp run --from clean`                | `clean` and its downstream (`analyze`)          |
-| `pdp run --from import --to analyze`  | Every task on a path from `import` to `analyze` |
-| `pdp run --to clean`                  | Same as `pdp run clean`                         |
+| Command                              | Action                                          |
+| ------------------------------------ | ----------------------------------------------- |
+| `pdp run`                            | All tasks                                       |
+| `pdp run clean`                      | `clean` and its upstream (`import`)             |
+| `pdp run clean --only`               | `clean` alone                                   |
+| `pdp run --from clean`               | `clean` and its downstream (`analyze`)          |
+| `pdp run --from import --to analyze` | Every task on a path from `import` to `analyze` |
+| `pdp run --to clean`                 | Same as `pdp run clean`                         |
 
 Several IDs run the union of their selections, so `pdp run import other --only`
 runs both alone. If a selected task depends on a stale task outside the
 selection, `pdp run` refuses and suggests `--from <task>`. Add `--allow-stale`
 to run anyway.
-
 
 ### Run with Dagster
 
@@ -122,9 +121,9 @@ to run anyway.
   record events so that changes to outputs outside of Dagster are properly
   recognized.
 - Run `pdp run --runner dagster` to run a selection through Dagster without the
-  UI, or set `runner: dagster` in `pdp.yml` to make it the default. It prints the
-  same summary as `pdp run`. Add `-v` to see Dagster's logs. Runs show up in the
-  UI's run list later.
+  UI, or set `runner: dagster` in `pdp.yml` to make it the default. It prints
+  the same summary as `pdp run`. Add `-v` to see Dagster's logs. Runs show up in
+  the UI's run list later.
 
 ### Run with Dagster-Slurm
 
@@ -167,9 +166,6 @@ First, put the cluster info in `.env` in your project root, and add `.env` to
 PDP_REMOTE_HOST=vacc-login1
 PDP_REMOTE_PATH=/gpfs1/home/n/e/netid/my-project
 PDP_REMOTE_PORT=3000 # optional
-
-# optionally pdp dagster version - only needed in development to keep uv accurate
-PDP_REMOTE_SPEC=pdp[dagster] @ git+https://github.com/ChrisDonovan307/pdp@740a13e
 ```
 
 Configure a `~/.ssh/config` which specifies a login node. This is required
@@ -244,6 +240,12 @@ Install as an editable tool with Dagster for development:
 
 ```sh
 uv tool install --force --editable "[dagster]"
+```
+
+If working with branches that are ahead of the latest release tag, add a pinned version to the `.env`:
+
+```sh
+PDP_REMOTE_SPEC="pdp[dagster] @ git+https://github.com/scienceandhumanitylab/pdp@<sha>"
 ```
 
 Guidelines

@@ -53,7 +53,7 @@ def _report(pdp: PDP, selection: set[str], result: dg.JobExecutionResult) -> Run
     failed_steps = {event.step_key for event in result.get_step_failure_events()}
 
     report = RunReport()
-    for tid in pdp._order(flattened):
+    for tid in pdp.order(flattened):
         if tid not in selection:
             continue
         if tid in materialized:

@@ -110,13 +110,11 @@ def programs(run):
 class TestLoadRemote:
     def test_parses_comments_blanks_and_equals_in_values(self, tmp_path):
         (tmp_path / ".env").write_text(
-            "# comment\n\nPDP_REMOTE_HOST=me@login1\nPDP_REMOTE_SPEC=pdp @ git+x?a=b\n"
+            "# comment\n\nPDP_REMOTE_HOST=me@login1\nPDP_REMOTE_PATH=/gpfs/a=b\n"
         )
 
         expect(parse_env(tmp_path / ".env")).to(
-            equal(
-                {"PDP_REMOTE_HOST": "me@login1", "PDP_REMOTE_SPEC": "pdp @ git+x?a=b"}
-            )
+            equal({"PDP_REMOTE_HOST": "me@login1", "PDP_REMOTE_PATH": "/gpfs/a=b"})
         )
 
     def test_environment_wins_over_env_file(self, tmp_path, monkeypatch):
@@ -604,27 +602,27 @@ class TestRemoteRun:
         )
 
 
+FINISHED = REPORT | {
+    "ran": ["a", "b", "c"],
+    "failed": ["d"],
+    "no_entrypoint": ["e"],
+    "exit_code": 1,
+    "finished": "2026-10-27T14:02:31",
+}
+
+
+@pytest.mark.parametrize(
+    "state, run",
+    [
+        ({"run_session": True}, "running"),
+        ({"last_run": FINISHED}, "finished 2026-10-27 14:02, ran 3, failed 2"),
+        ({}, "none"),
+    ],
+    ids=["running", "last_result", "none"],
+)
 @pytest.mark.usefixtures("remote_project")
-class TestStatusRun:
-    def status(self, **state):
-        with fake_run(ports=(False,), **state):
-            return invoke("remote", "status")
+def test_status_shows_run(state, run):
+    with fake_run(ports=(False,), **state):
+        result = invoke("remote", "status")
 
-    def test_running(self):
-        expect(self.status(run_session=True).stdout).to(contain("run:      running"))
-
-    def test_last_result(self):
-        last = {
-            "ran": ["a", "b", "c"],
-            "failed": ["d"],
-            "no_entrypoint": ["e"],
-            "exit_code": 1,
-            "finished": "2026-10-27T14:02:31",
-        }
-
-        expect(self.status(last_run=last).stdout).to(
-            contain("run:      finished 2026-10-27 14:02, ran 3, failed 2")
-        )
-
-    def test_none(self):
-        expect(self.status().stdout).to(contain("run:      none"))
+    expect(result.stdout).to(contain(f"run:      {run}"))
