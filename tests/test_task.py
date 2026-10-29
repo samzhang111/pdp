@@ -313,16 +313,14 @@ class TestSlurmFlags:
 
 class TestClean:
     def test_clean_removes_matching_files_and_folders(self, real_task):
-        write_task_yml(real_task.task_directory, clean=["output/*", "tmp"])
+        write_task_yml(real_task.task_directory)
         (real_task.output_folder / "result.csv").touch()
-        (real_task.task_directory / "tmp").mkdir()
-        (real_task.task_directory / "tmp" / "scratch.txt").touch()
 
         removed = real_task.clean()
 
-        expect(removed).to(equal([Path("output/result.csv"), Path("tmp")]))
+        # breakpoint()
+        expect(removed).to(equal([Path("output/result.csv")]))
         expect(list(real_task.output_folder.iterdir())).to(equal([]))
-        expect((real_task.task_directory / "tmp").exists()).to(be_false)
 
     def test_clean_does_not_follow_symlinks_out_of_task(self, real_task, tmp_path):
         elsewhere = tmp_path / "elsewhere"

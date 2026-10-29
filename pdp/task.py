@@ -112,22 +112,15 @@ class Task:
             removed: Paths removed, relative to the task directory
         """
         removed = []
-        for pattern in self.task_config.clean:
-            for path in sorted(self.task_directory.glob(pattern)):
-                if (
-                    path == self.task_directory
-                    or path == self.task_config.path_to_config
-                    # through a symlink, or outside the task via ..
-                    or path.parent.resolve() != path.parent
-                ):
-                    continue
-                if path.is_dir() and not path.is_symlink():
-                    shutil.rmtree(path)
-                elif path.is_symlink() or path.exists():
-                    path.unlink()
-                else:
-                    continue  # already removed by an earlier pattern
-                removed.append(path.relative_to(self.task_directory))
+
+        for path in (self.task_directory / "output").iterdir():
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            elif path.is_symlink() or path.exists():
+                path.unlink()
+
+            removed.append(path.relative_to(self.task_directory))
+
         return removed
 
     def _output_snapshot(self) -> dict[str, tuple[int, int]]:

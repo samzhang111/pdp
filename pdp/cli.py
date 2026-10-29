@@ -305,7 +305,7 @@ def run(
 
 @app.command()
 def clean(task_ids: TaskIds = None, from_: From = None, to: To = None) -> None:
-    """Delete the files listed under `clean` in each task.yml.
+    """Delete all files in the output/ folder in each task.
 
     Cleans only the given tasks, not their upstreams, or every task if no id given.
     If run from inside a task directory and without ids, cleans that task."""

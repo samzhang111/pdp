@@ -113,17 +113,6 @@ def test_task_config_description_is_optional_string(fs):
     )
 
 
-def test_task_config_clean_is_optional_list(fs):
-    base = {"name": "task1", "entrypoint": "", "depends_on": []}
-    write_config_file("task.yml", {**base, "clean": ["output/*"]})
-    expect(TaskConfig("task1", "task.yml").validation_errors()).to(equal([]))
-
-    write_config_file("task.yml", {**base, "clean": "output/*"})
-    expect(TaskConfig("task1", "task.yml").validation_errors()).to(
-        equal(["clean must be list, got str"])
-    )
-
-
 def test_task_config_repr_prints_name_and_path(fs):
     config = TaskConfig("task1", "task.yml")
     expect(str(config)).to(equal("TaskConfig(task1, /task.yml)"))

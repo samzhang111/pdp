@@ -481,9 +481,9 @@ class TestDagsterCli:
 class TestClean:
     @pytest.fixture
     def cleanable_dag(self, stale_dag):
-        """stale_dag where every task has output/ran and cleans output/*"""
+        """stale_dag where every task has output/ran"""
         for task in stale_dag.tasks:
-            write_task_yml(task.task_id, depends_on=task.depends_on, clean=["output/*"])
+            write_task_yml(task.task_id, depends_on=task.depends_on)
             (task.output_folder / "ran").touch()
         return stale_dag
 
